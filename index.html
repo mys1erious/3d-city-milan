@@ -61,7 +61,7 @@
 <canvas id="c" aria-label="3D model of central Milan lit by the real sun, from sunrise to night"></canvas>
 <div id="scrim"></div>
 <div id="hud">
-  <div id="kicker">Milan · 10,023 surveyed buildings · the real sun</div>
+  <div id="kicker">Milan · 9,967 surveyed building parts · the real sun</div>
   <div id="clock">--:--</div>
   <div id="date"></div>
   <div id="sun"></div>
@@ -189,15 +189,34 @@ function roofGeometry(outer, holes, shape, base, rh) {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); return g;
 }
 
+function riderGeometry() { // equestrian statue, ~4.8 m tall before scaling, horse along +x, origin at the hooves
+  const P = [], add = (g, x, y, z, rz = 0) => { g.deleteAttribute('uv'); g.rotateZ(rz); g.translate(x, y, z); P.push(g); };
+  add(new THREE.CapsuleGeometry(0.62, 1.9, 4, 10).rotateZ(Math.PI / 2), 0, 2.15, 0);                 // body
+  for (const [x, z, r] of [[0.85, 0.32, -0.35], [0.95, -0.32, 0], [-0.9, 0.32, 0.12], [-0.9, -0.32, -0.08]]) // legs, one foreleg raised
+    add(new THREE.CylinderGeometry(0.13, 0.11, 1.75, 6), x, 0.9, z, r);
+  add(new THREE.CylinderGeometry(0.3, 0.45, 1.4, 8), 1.45, 2.95, 0, -0.75);                          // neck
+  add(new THREE.BoxGeometry(0.95, 0.42, 0.36), 2.05, 3.45, 0, -0.5);                                // head
+  add(new THREE.CylinderGeometry(0.06, 0.18, 1.3, 6), -1.75, 1.75, 0, -0.35);                       // tail
+  add(new THREE.CapsuleGeometry(0.32, 0.85, 4, 8), 0.05, 3.35, 0, 0.08);                             // rider
+  add(new THREE.SphereGeometry(0.24, 10, 8), 0.1, 4.15, 0);                                          // head
+  add(new THREE.CylinderGeometry(0.2, 0.26, 0.28, 10), 0.1, 4.42, 0);                                // hat
+  for (const z of [0.42, -0.42]) add(new THREE.CapsuleGeometry(0.12, 0.7, 2, 6), 0.15, 2.65, z, 0.3); // legs over the flanks
+  return mergeGeometries(P).toNonIndexed(); // the city merges non-indexed extrusions
+}
+
 // Milan look: stucco façades (ochre, Maria Theresa yellow, terracotta, salmon, cream, stone), coppi roofs or grey flat roofs
 const FACADES = [[0xdcae6e, 3], [0xe8c681, 3], [0xd18c62, 2], [0xe2b396, 2], [0xebdabd, 3], [0xcfc2ad, 2], [0xf1e8da, 2], [0xc69c7a, 1]];
 const FW = FACADES.reduce((s, [, w]) => s + w, 0);
 const pickFacade = (u) => { for (const [c, w] of FACADES) { if ((u -= w / FW) < 0) return c; } return FACADES[0][0]; };
 const ROOFS = [0xa65e40, 0xb26b4b, 0x98553a, 0xa96a52, 0x96918a, 0xa7a097];
-function look(name, g, h) { // -> [kind, façade, roof]; kind 0 ordinary (windows), 1 Duomo marble, 2 Galleria (glass roof), 3 plain stone/brick (no windows)
+function look(name, g, h) { // -> [kind, façade, roof]; kind 0 ordinary (windows), 1 Duomo marble, 2 Galleria (glass roof), 3 plain stone/brick (no windows), 4 all glass
   if (name === 'Duomo di Milano') return h >= 105 ? [1, 0xd9a441, 0xd9a441] : [1, 0xf3e8e2, 0xf0e4de]; // the gilded Madonnina on top
   if (name.startsWith('Galleria Vittorio Emanuele')) return [2, 0xead3ae, 0x8ea6b4];
-  if (name === 'Castello Sforzesco') return [3, 0xb8653f, 0x9c5236];
+  if (name === 'Ottagono') return [4, 0x8ea6b4, 0x8ea6b4]; // the Galleria's glass dome
+  if (name === 'Arco della Galleria') return [3, 0xe6d3b2, 0xb9ad9a];
+  if (name === 'Castello Sforzesco' || /^(Torre del Filarete|Torre Falconiera|Rivellino)/.test(name)) return [3, 0xb8653f, 0x9c5236];
+  if (name === 'Palazzo della Ragione') return [3, 0xb36a4c, 0x9a5638]; // brick, arcaded
+  if (name === 'Monumento a Vittorio Emanuele II') return h > 10 ? [3, 0x4d4339, 0x4d4339] : [3, 0xd8d0c2, 0xcfc6b6]; // bronze rider, stone base
   if (/^(Chiesa|Basilica)/.test(name)) return [3, 0xdccfba, 0xa65e40];
   if (name === 'Torre Velasca') return [0, 0xc9a48c, 0x9a958e];
   return [0, pickFacade(hash(g * 7 + 1)), ROOFS[Math.floor(hash(g * 13 + 5) * ROOFS.length)]];
@@ -218,7 +237,11 @@ data.b.forEach((b, bi) => {
   g.rotateX(-Math.PI / 2); g.translate(0, mh, 0); g.deleteAttribute('uv');
   const geos = [g];
   if (shape && rh > 0.3) geos.push(roofGeometry(outer, holes, shape, top, rh));
-  const merged = geos.length > 1 ? mergeGeometries(geos) : g;
+  if (ni >= 0 && data.names[ni] === 'Monumento a Vittorio Emanuele II' && mh > 0) { // the bronze rider: a horse and king, facing the Duomo (east)
+    const c = outer.reduce((s, p) => s.add(p), new THREE.Vector2()).divideScalar(outer.length);
+    geos.length = 0; geos.push(riderGeometry().scale(1.3, 1.3, 1.3).translate(c.x, mh, -c.y));
+  }
+  const merged = geos.length > 1 ? mergeGeometries(geos) : geos[0];
   starts.push(vcount); vcount += merged.attributes.position.count;
   const grp = data.grp?.[bi] ?? -1, name = ni >= 0 ? data.names[ni] : '';
   info.push({ h, ni, src, c: outer.reduce((s, p) => s.add(p), new THREE.Vector2()).divideScalar(outer.length),
@@ -264,8 +287,8 @@ float band(float x, float a, float b) { float w = max(fwidth(x), 1e-4) * 0.8; re
 vec3 gGlow = vec3(0.0);
 {
   float kind = vK.x, seed = vK.y;
-  float roof = smoothstep(0.3, 0.45, vWN.y), wall = 1.0 - roof;
-  float isDuomo = step(0.5, kind) * step(kind, 1.5), isGal = step(1.5, kind) * step(kind, 2.5);
+  float roof = max(smoothstep(0.3, 0.45, vWN.y), step(3.5, kind)), wall = 1.0 - roof;   // kind 4 is glass all over
+  float isDuomo = step(0.5, kind) * step(kind, 1.5), isGal = step(1.5, kind) * step(kind, 2.5) + step(3.5, kind);
   float windows = wall * (1.0 - step(2.5, kind)) * (1.0 - isDuomo);   // ordinary buildings and the Galleria
   vec3 alb = mix(diffuseColor.rgb, vRoof, roof);
   alb *= mix(1.0, 0.8, windows * (1.0 - isGal) * (1.0 - step(4.0, vWP.y)));        // stone plinth at street level
@@ -287,7 +310,7 @@ vec3 gGlow = vec3(0.0);
   vec3 warm = mix(vec3(1.0, 0.7, 0.4), vec3(0.82, 0.88, 1.0), step(0.82, h21(cell + 3.1)));
   gGlow += alb * vec3(1.0, 0.82, 0.6) * wall * (1.0 - isDuomo) * uNight * 0.16 * (1.0 - smoothstep(0.0, 13.0, vWP.y));   // street light on the lower walls
   gGlow += warm * win * m * on * uNight * 1.15 + vec3(1.0, 0.72, 0.45) * windows * (1.0 - fade) * uLit * 0.3 * uNight;
-  gGlow += vec3(1.0, 0.7, 0.4) * roof * isGal * uNight * 0.55;                      // the Galleria's glass roof glows
+  gGlow += vec3(1.0, 0.62, 0.3) * roof * isGal * uNight * 0.16;                     // the lit Galleria shows through its glass                      // the Galleria's glass roof glows
   c = mix(c, vec3(0.62, 0.7, 0.76), roof * isGal * 0.5);
   { // the Duomo's west front: five pointed portals, a tall window over each, the great window over the middle one
     float front = isDuomo * step(0.85, -vWN.x) * step(vWP.x, uFacade.y + 9.0);
@@ -317,6 +340,14 @@ vec3 gGlow = vec3(0.0);
 };
 const city = new THREE.Mesh(cityGeo, cityMat);
 city.castShadow = city.receiveShadow = true;
+// glass (the Galleria's vaults, the Ottagono) lets the sun through: skip it when drawing the shadow map
+city.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+city.customDepthMaterial.onBeforeCompile = (s) => {
+  s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aK; varying float vGlass;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlass = step(1.5, aK.x) * step(aK.x, 2.5) + step(3.5, aK.x);');
+  s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGlass;')
+    .replace('void main() {', 'void main() {\n  if (vGlass > 0.5) discard;');
+};
 scene.add(city);
 
 // ground disc, plinth edge, streets, tram beds, piazzas, parks
@@ -407,37 +438,43 @@ const DUOMO = (() => { const ids = info.map((b, i) => [b, i]).filter(([b]) => b.
 AREAS.forEach((a, k) => { if (inPoly(DUOMO.west - 40, DUOMO.y, a)) piazza = k; });
 U.uFacade.value.set(-DUOMO.y, DUOMO.west);
 
-// the Duomo's forest of marble pinnacles: one on every buttress along the roof edges, and the piers of the west front
+// the Duomo's forest of marble pinnacles: a spire and statue on every pinnacle the survey measured (small volumes),
+// and a row of smaller ones along the edges of the roof terraces (nave, aisles, transepts, apse)
 const PINN = [];
 {
-  const pts = [];
+  const rows = [], tips = []; // rows: [x, y, base, H]; tips: [x, y, height, scale]
   const along = (poly, step, inset, base, H) => { // points every `step` m along a closed outline, pulled `inset` m inwards
     const c = poly.reduce((s, p) => s.add(p), new THREE.Vector2()).divideScalar(poly.length);
     for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length], L = a.distanceTo(b);
-      for (let t = step / 2; t < L; t += step) { const p = a.clone().lerp(b, t / L); p.add(c.clone().sub(p).setLength(inset)); pts.push([p.x, p.y, base, H]); } }
+      for (let t = step / 2; t < L; t += step) { const p = a.clone().lerp(b, t / L); p.add(c.clone().sub(p).setLength(inset)); rows.push([p.x, p.y, base, H]); } }
   };
-  if (DUOMO_PARTS.length) {
-    const block = DUOMO_PARTS.reduce((a, b) => (b.area > a.area ? b : a));
-    along(block.outer, 6.2, 1.2, block.top, 11);
-    for (const p of DUOMO_PARTS) if (p.shape === 3 && p.area > 600) along(p.outer, 6.5, 1.0, p.top, 8.5);
-    [-31, -18.6, -6.2, 6.2, 18.6, 31].forEach((o, i) => pts.push([DUOMO.west - 0.4, DUOMO.y + o, 0, [46, 50, 56, 56, 50, 46][i]]));
+  for (const p of DUOMO_PARTS) {
+    const c = p.outer.reduce((s, q) => s.add(q), new THREE.Vector2()).divideScalar(p.outer.length);
+    if (p.area < 25 && p.top < 60) tips.push([c.x, c.y, p.top, 1.35]);
+    else if (p.area > 300 && p.top < 60) along(p.outer, 7.5, 1.0, p.top, 6);
   }
+  rows.forEach(([x, y, base, H]) => tips.push([x, y, base + H, 1]));
   const mat = new THREE.MeshStandardMaterial({ color: 0xefe3dd, roughness: 0.8, emissive: 0xf3d9bf, emissiveIntensity: 0 });
-  const shafts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.65, 1, 8).translate(0, 0.5, 0), mat, Math.max(1, pts.length));
+  const shafts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.65, 1, 8).translate(0, 0.5, 0), mat, Math.max(1, rows.length));
   const tops = new THREE.InstancedMesh(mergeGeometries([new THREE.ConeGeometry(0.75, 3.2, 8).translate(0, 1.6, 0),
-    new THREE.CapsuleGeometry(0.22, 0.6, 2, 6).translate(0, 3.6, 0)]), mat, Math.max(1, pts.length)); // spire and its statue
-  pts.forEach(([x, y, base, H], i) => {
-    shafts.setMatrixAt(i, tmpM.compose(W(x, base, y), tmpQ.identity(), new THREE.Vector3(1, H, 1)));
-    tops.setMatrixAt(i, tmpM.makeTranslation(x, base + H, -y));
-  });
+    new THREE.CapsuleGeometry(0.22, 0.6, 2, 6).translate(0, 3.6, 0)]), mat, Math.max(1, tips.length)); // spire and its statue
+  rows.forEach(([x, y, base, H], i) => shafts.setMatrixAt(i, tmpM.compose(W(x, base, y), tmpQ.identity(), new THREE.Vector3(1, H, 1))));
+  tips.forEach(([x, y, h, k], i) => tops.setMatrixAt(i, tmpM.compose(W(x, h, y), tmpQ.identity(), new THREE.Vector3(k, k, k))));
   for (const m of [shafts, tops]) { m.castShadow = m.receiveShadow = true; scene.add(m); PINN.push(m); }
 }
+const OBST = AREAS.map((a) => { // building footprints inside each walkable area, with bounding boxes for a quick test
+  const bx = a.map((p) => p.x), by = a.map((p) => p.y), [x0, x1, y0, y1] = [Math.min(...bx), Math.max(...bx), Math.min(...by), Math.max(...by)];
+  return data.b.map((b) => ring(b[4])).filter((r) => { const c = r.reduce((s, p) => s.add(p), new THREE.Vector2()).divideScalar(r.length);
+    return c.x > x0 && c.x < x1 && c.y > y0 && c.y < y1 && inPoly(c.x, c.y, a); })
+    .map((r) => ({ r, x0: Math.min(...r.map((p) => p.x)) - 0.4, x1: Math.max(...r.map((p) => p.x)) + 0.4, y0: Math.min(...r.map((p) => p.y)) - 0.4, y1: Math.max(...r.map((p) => p.y)) + 0.4 }));
+});
+const blocked = (x, y, k) => OBST[k].some((o) => x > o.x0 && x < o.x1 && y > o.y0 && y < o.y1 && inPoly(x, y, o.r));
 AREAS.forEach((a, k) => {
   const A = Math.abs(THREE.ShapeUtils.area(a)), n = Math.min(700, Math.round(A * (k === piazza ? 0.03 : 0.006)));
   const bx = a.map((p) => p.x), by = a.map((p) => p.y), [x0, x1, y0, y1] = [Math.min(...bx), Math.max(...bx), Math.min(...by), Math.max(...by)];
   for (let i = 0, tries = 0; i < n && tries < n * 40; tries++) {
     const x = x0 + (x1 - x0) * hash(k * 7919 + tries * 2), y = y0 + (y1 - y0) * hash(k * 7919 + tries * 2 + 1);
-    if (inPoly(x, y, a)) { people.push({ x, y, h: hash(tries * 3 + k) * 6.283, sp: 1.0 + 0.6 * hash(tries + k * 17), a, id: people.length }); i++; }
+    if (inPoly(x, y, a) && !blocked(x, y, k)) { people.push({ x, y, h: hash(tries * 3 + k) * 6.283, sp: 1.0 + 0.6 * hash(tries + k * 17), a, k, id: people.length }); i++; }
   }
 });
 const crowd = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.24, 1.2, 2, 6).translate(0, 0.84, 0), new THREE.MeshStandardMaterial({ roughness: 0.9 }), Math.max(1, people.length));
@@ -449,7 +486,7 @@ function walk(sec) { // advance the crowd to time sec in fixed 1/30 s steps
     const st = Math.floor(simT * 30);
     p.h += (hash(p.id * 131 + st) - 0.5) * 0.12;
     const nx = p.x + Math.cos(p.h) * p.sp / 30, ny = p.y + Math.sin(p.h) * p.sp / 30;
-    if (inPoly(nx, ny, p.a)) { p.x = nx; p.y = ny; } else p.h += Math.PI * (0.6 + 0.8 * hash(p.id + st));
+    if (inPoly(nx, ny, p.a) && !blocked(nx, ny, p.k)) { p.x = nx; p.y = ny; } else p.h += Math.PI * (0.6 + 0.8 * hash(p.id + st));
   }
   people.forEach((p, i) => crowd.setMatrixAt(i, tmpM.makeTranslation(p.x, 0.32, -p.y)));
   crowd.instanceMatrix.needsUpdate = true;
@@ -587,8 +624,9 @@ function highlight(i) {
 }
 function describe(i) {
   const b = info[i], name = b.ni >= 0 ? data.names[b.ni] : 'Unnamed building';
-  const tall = b.ni >= 0 ? Math.max(...byName.get(b.ni).map((k) => info[k].h)) : b.h, hs = Number.isInteger(tall) || tall > 150 ? tall.toFixed(0) : tall.toFixed(1);
-  const how = b.src === 3 ? 'surveyed by the Comune' : b.src === 0 ? 'mapped height' : b.src === 1 ? `${Math.round(b.h / 3.2)} floors` : 'height estimated';
+  const top = b.ni >= 0 ? byName.get(b.ni).reduce((m, k) => (info[k].h > info[m].h ? k : m)) : i, tall = info[top].h, src = info[top].src; // the tallest part says where its height comes from
+  const hs = Number.isInteger(tall) || tall > 150 ? tall.toFixed(0) : tall.toFixed(1);
+  const how = src === 3 ? 'surveyed by the Comune' : src === 0 ? 'mapped height' : src === 1 ? `${Math.round(tall / 3.2)} floors` : 'height estimated';
   return `<b>${name.replace(/</g, '&lt;')}</b> <span>· ${hs} m · ${how}</span>`;
 }
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
@@ -750,7 +788,10 @@ else {
   const today = romeToday(); setDate(Q.get('date') || today, false);
   const p = romeParts(Date.now()), now = +p.hour * 60 + +p.minute;
   setSun(now > state.rise - 40 && now < state.set + 70 ? now : state.set - 55);
-  const s0 = SHOTS(state.rise, state.set, 720)[6]; place({ ...s0, ...(innerWidth / innerHeight < 0.9 ? { d: 1400, el: 50 } : {}) });
+  // open on the Duomo from the piazza (where the video ends), at the real time now, slowly orbiting until the visitor takes over
+  place({ tx: DUOMO.x - 30, ty: DUOMO.y, th: 30, az: 255, el: 20, d: innerWidth / innerHeight < 0.9 ? 560 : 430 });
+  controls.autoRotate = !Q.has('cam'); controls.autoRotateSpeed = 0.35;
+  controls.addEventListener('start', () => { controls.autoRotate = false; });
   if (Q.has('cam')) { const [tx, ty, th, az, el, d] = Q.get('cam').split(',').map(Number); place({ tx, ty, th, az, el, d }); }
   if (Q.has('m')) setSun(+Q.get('m'));
   if (Q.has('heat')) await showHeat(true);

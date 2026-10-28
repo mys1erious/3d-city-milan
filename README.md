@@ -1,12 +1,12 @@
 # Milan in 3D, lit by the real sun
 
-Central Milan in the browser: 10,023 buildings from the Comune di Milano's own survey, 1,298 surveyed trees, the 11 tram
+Central Milan in the browser: 9,967 building parts from the Comune di Milano's own survey, 1,298 surveyed trees, the 11 tram
 lines that cross the centre with trams running on them, people in the piazzas, and street lights hung over the streets as
 in Milan. The sun is the real one for any date and time, from the blue hour before sunrise to the floodlit Duomo at night.
 
 **Live:** https://mys1erious.github.io/3d-city-milan/
 
-![Piazza del Duomo at night](poster.jpg)
+![The Duomo floodlit at night](poster.jpg)
 
 ## What you can do
 - Drag the time slider, pick a date (21 Jun / 21 Dec / today), orbit and zoom.
@@ -35,9 +35,18 @@ in Milan. The sun is the real one for any date and time, from the blue hour befo
 | [OpenStreetMap](https://www.openstreetmap.org/copyright) | the Duomo's spires, roof shapes (Galleria, Torre Velasca, Castello towers), names, streets, piazzas, parks, tram routes | ODbL, © OpenStreetMap contributors |
 
 Inside the disc the survey has 10,899 building volumes, each with its height and base level, so arcades and raised wings
-start above the street. OpenStreetMap is kept where it models a building better (the Duomo's 103 parts up to the 108.5 m
-Madonnina; tagged roof forms). For the 15 named buildings that have an OSM height, the survey's tallest volume differs by
-2.6 m at the median.
+start above the street. The Duomo is the survey's own 64 volumes (nave 46.7 m, aisles 32.4 m, tiburio 65.8 m, spire
+shaft 94.3 m, its pinnacles); OpenStreetMap adds the spire tip and the gilded Madonnina (108.5 m) and the tagged roof
+forms (Galleria, Ottagono, Torre Velasca, the Castello's towers). For the 15 named buildings that have an OSM height,
+the survey's tallest volume differs by 3.2 m at the median.
+
+`landmarks.py` adds what neither dataset expresses: the Galleria's covered streets open under glass vaults from 25.07 to
+29.28 m, the Ottagono's glass dome from 20.15 to 47.08 m, and the four entrances cut through the buildings in front (the
+arch on Piazza del Duomo 12 m wide, open to 27.8 m, attic to 38.5 m), from A. Rondello's figures published by
+[Politecnico di Milano](https://re.public.polimi.it/bitstream/11311/1006962/1/GVE%20volume%20OS%202016.pdf);
+Palazzo della Ragione on its arcade of 7 x 2 arches (8 m height estimated); the Vittorio Emanuele II monument (14.8 m,
+position from [it.wikipedia](https://it.wikipedia.org/wiki/Monumento_a_Vittorio_Emanuele_II_(Milano)), footprint
+estimated).
 
 ## How it works
 - One `index.html` with three.js 0.170 from a CDN: extruded buildings, a façade shader (Milan's stucco colours, windows
@@ -56,6 +65,7 @@ uv run --with pyshp --with pyproj python dbt_merge.py "<DBT 2020 - SHAPE dir>" m
 # 2. tram routes and piazzas from Overpass (out geom), within 830 m of 45.4662, 9.1868
 python3 -I add_trams.py trams.json milan.json      # relation["route"="tram"]
 python3 -I add_piazzas.py squares.json milan.json  # highway=pedestrian / area:highway=pedestrian / place=square
+python3 -I landmarks.py milan.json                 # Galleria, Ragione arcade, monument
 # 3. sun hours
 python3 -I sun_hours.py milan.json . 2026-06-21 2026-12-21 2026-03-20
 ```

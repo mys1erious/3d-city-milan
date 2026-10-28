@@ -55,11 +55,11 @@ oidx = {id(b): i for i, b in enumerate(osm['b'])}
 keep, outlines = [], []  # OSM records kept as-is; named OSM outlines for name lookup
 for b in osm['b']:
     ring = unflat(b[4])
-    if b[2] in duomo_ids or len(b) > 6: keep.append((b, ring, bbox(ring)))
+    if (b[2] in duomo_ids and b[0] > 95) or (b[2] not in duomo_ids and len(b) > 6): keep.append((b, ring, bbox(ring)))  # OSM: Duomo spire tip + Madonnina, roof forms
     outlines.append((b, ring, bbox(ring)))
 # a kept part that floats (min_height > 0, e.g. a tower's roof) needs the OSM shapes under it too, or it hovers over the lower DBT eave
 for b, ring, bb in list(keep):
-    if b[1] > 0:
+    if b[1] > 0 and b[2] not in duomo_ids:
         c = centroid(ring)
         keep += [s for s in outlines if s[0] is not b and all(s[0] is not k[0] for k in keep) and s[0][1] < b[1] and hit(c, [s])]
 print('OSM kept:', len(keep), 'of', len(osm['b']), '(Duomo parts', sum(k[0][2] in duomo_ids for k in keep), ')')
@@ -85,7 +85,7 @@ def ground(c):
     zs = [z for dx in (-1, 0, 1) for dy in (-1, 0, 1) for z in cells.get((int(c[0] // 100) + dx, int(c[1] // 100) + dy), [])]
     return statistics.median(zs) if len(zs) >= 5 else gmed
 
-res, grp, cmp, skipped = [], [], [], collections.Counter()
+res, grp, ced_of, cmp, skipped = [], [], [], [], collections.Counter()
 for av, por, z, rings, ged in vols:
     outers = [r for r in rings if area(r) < 0 and len(r) >= 3]  # shapefile outer rings are clockwise
     holes = [r for r in rings if area(r) > 0 and len(r) >= 3]
@@ -94,7 +94,7 @@ for av, por, z, rings, ged in vols:
     for o in outers:
         c = centroid(o)
         if math.hypot(*c) > R + 5 and all(math.hypot(*p) > R for p in o): continue
-        if hit(c, keep): skipped['inside kept OSM'] += 1; continue
+        if hit(c, [k for k in keep if k[0][2] not in duomo_ids]): skipped['inside kept OSM'] += 1; continue  # the Duomo's DBT volumes stay
         g = ground(c)
         mh = z - g if z - g > 1.5 else 0.0  # raised volumes (over porticoes, passages) start above the street
         top = mh + av
@@ -110,8 +110,16 @@ for av, por, z, rings, ged in vols:
         rec = [round(top, 1), round(mh, 1), nid, 3, flat(oo)]
         hs = [flat(h) for h in hs if len(h) >= 3 and abs(area(h)) > 1]
         if hs: rec.append(hs)
-        res.append(rec); grp.append(oidx[id(own)] if own else 100000 + ged)
+        res.append(rec); grp.append(oidx[id(own)] if own else 100000 + ged); ced_of.append(ged)
 
+# an unnamed volume takes the name most volumes of its DBT building have (the Duomo's buttresses stick out of its OSM outline)
+by_ced = collections.defaultdict(list)
+for i, g in enumerate(ced_of): by_ced[g].append(i)
+for g, ids in by_ced.items():
+    names = collections.Counter(res[i][2] for i in ids if res[i][2] >= 0)
+    if g >= 0 and names and names.most_common(1)[0][1] * 2 > len(ids):
+        for i in ids:
+            if res[i][2] < 0: res[i][2] = names.most_common(1)[0][0]
 res += [k[0] for k in keep]; grp += [-1] * len(keep)
 d = dict(osm)
 d['attribution'] = '© OpenStreetMap contributors (ODbL) · Buildings: Comune di Milano, DBT 2020 (CC-BY 4.0)'

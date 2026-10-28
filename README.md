@@ -44,9 +44,15 @@ the survey's tallest volume differs by 3.2 m at the median.
 29.28 m, the Ottagono's glass dome from 20.15 to 47.08 m, and the four entrances cut through the buildings in front (the
 arch on Piazza del Duomo 12 m wide, open to 27.8 m, attic to 38.5 m), from A. Rondello's figures published by
 [Politecnico di Milano](https://re.public.polimi.it/bitstream/11311/1006962/1/GVE%20volume%20OS%202016.pdf);
-Palazzo della Ragione on its arcade of 7 x 2 arches (8 m height estimated); the Vittorio Emanuele II monument (14.8 m,
-position from [it.wikipedia](https://it.wikipedia.org/wiki/Monumento_a_Vittorio_Emanuele_II_(Milano)), footprint
-estimated).
+Palazzo della Ragione on its arcade of 7 x 2 arches (8 m height estimated); the Loggia degli Osii's portico (6 m,
+estimated); the Vittorio Emanuele II monument (14.8 m, position from
+[it.wikipedia](https://it.wikipedia.org/wiki/Monumento_a_Vittorio_Emanuele_II_(Milano)), footprint estimated); the
+Teatro alla Scala's name; and only the top 4.16 m of the Madonnina gilded.
+
+`roofs.mjs` gives the surveyed buildings their roofs: the DBT heights stop at the eaves, so each footprint gets its
+straight skeleton from CGAL through [`straight-skeleton`](https://github.com/StrandedKitty/straight-skeleton) 2.0.1
+(5,691 of 5,722 footprints), and the page builds a 17.7° tiled hip roof on it, at most 2.6 m high, or leaves a flat
+terrace for the grey-roofed ones. The Torre Velasca gets its 20 ribs and struts in the page.
 
 ## How it works
 - One `index.html` with three.js 0.170 from a CDN: extruded buildings, a façade shader (Milan's stucco colours, windows
@@ -65,7 +71,8 @@ uv run --with pyshp --with pyproj python dbt_merge.py "<DBT 2020 - SHAPE dir>" m
 # 2. tram routes and piazzas from Overpass (out geom), within 830 m of 45.4662, 9.1868
 python3 -I add_trams.py trams.json milan.json      # relation["route"="tram"]
 python3 -I add_piazzas.py squares.json milan.json  # highway=pedestrian / area:highway=pedestrian / place=square
-python3 -I landmarks.py milan.json                 # Galleria, Ragione arcade, monument
+python3 -I landmarks.py milan.json scala.json      # Galleria, arcades, monument, La Scala (relation(6552704);out geom;)
+node roofs.mjs milan.json                          # needs: npm i straight-skeleton@2.0.1 @playwright/test
 # 3. sun hours
 python3 -I sun_hours.py milan.json . 2026-06-21 2026-12-21 2026-03-20
 ```

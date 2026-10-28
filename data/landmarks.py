@@ -6,7 +6,7 @@
 # Piazza del Duomo: 12 m wide, open to 27.8 m, attic to 38.5 m; the other entrances: the arm's width, open to the vault).
 # The arms and the Ottagono floor are added as pedestrian areas so people walk through them.
 # Also: Palazzo della Ragione's arcade and the Vittorio Emanuele II monument (sources below).
-# usage: python3 -I landmarks.py milan.json   (after dbt_merge.py, add_trams.py, add_piazzas.py)
+# usage: python3 -I landmarks.py milan.json [La Scala relation json: relation(6552704);out geom;]   (after dbt_merge.py, add_trams.py, add_piazzas.py)
 import json, sys
 
 d = json.load(open(sys.argv[1])); N = d['names']
@@ -86,9 +86,46 @@ MON = N.index('Monumento a Vittorio Emanuele II')
 box = lambda hx, hy: [int(round(c * 10)) for p in ((mx - hx, my - hy), (mx + hx, my - hy), (mx + hx, my + hy), (mx - hx, my + hy)) for c in p]
 d['b'] += [[8.5, 0, MON, 0, box(5.5, 3.5)], [14.8, 8.5, MON, 0, box(2.75, 1.2)]]; d['grp'] += [-1, -1]  # the rider faces the Duomo (east)
 
+ctr = lambda f: (sum(f[0::2]) / len(f[0::2]), sum(f[1::2]) / len(f[1::2]))
+
+# Loggia degli Osii: five round arches on the ground floor (piazzamercanti.milano.it); open portico lifted to 6 m (estimate)
+OSI = N.index('Loggia degli Osii')
+osii = [b for b in d['b'] if b[2] == OSI]  # its two DBT volumes, lifted together
+pts = [(f[i] / 10, f[i + 1] / 10) for f in (b[4] for b in osii) for i in range(0, len(f), 2)]
+cx, cy = sum(x for x, _ in pts) / len(pts), sum(y for _, y in pts) / len(pts)
+sxx = sum((x - cx) ** 2 for x, _ in pts); syy = sum((y - cy) ** 2 for _, y in pts); sxy = sum((x - cx) * (y - cy) for x, y in pts)
+th = 0.5 * math.atan2(2 * sxy, sxx - syy); ux, uy = math.cos(th), math.sin(th)
+us = [(x - cx) * ux + (y - cy) * uy for x, y in pts]; vs = [-(x - cx) * uy + (y - cy) * ux for x, y in pts]
+u0, u1, v0, v1 = min(us) + 0.5, max(us) - 0.5, min(vs) + 0.5, max(vs) - 0.5
+for b in osii: b[1] = 6.0
+for i in range(6):
+    for v in (v0, v1):
+        u = u0 + (u1 - u0) * i / 5
+        sq = [P2 for P2 in ((cx + uu * ux - vv * uy, cy + uu * uy + vv * ux) for uu, vv in ((u - 0.5, v - 0.5), (u + 0.5, v - 0.5), (u + 0.5, v + 0.5), (u - 0.5, v + 0.5)))]
+        d['b'].append([6.0, 0, OSI, 3, [int(round(c * 10)) for p in sq for c in p]]); d['grp'].append(d['grp'][d['b'].index(osii[0])])
+
+# Teatro alla Scala: the DBT volumes inside OSM's outline of the theatre (relation 6552704) get its name
+if len(sys.argv) > 2:
+    rel = [e for e in json.load(open(sys.argv[2]))['elements'] if e['type'] == 'relation'][0]
+    LAT0, LON0 = 45.4662, 9.1868
+    KX = math.radians(1) * 6378137 * math.cos(math.radians(LAT0)); KY = math.radians(1) * 6378137
+    ring = lambda m: [c for p in m['geometry'] for c in (round((p['lon'] - LON0) * KX * 10), round((p['lat'] - LAT0) * KY * 10))]
+    outer = [ring(m) for m in rel['members'] if m['role'] == 'outer']; inner = [ring(m) for m in rel['members'] if m['role'] == 'inner']
+    if 'Teatro alla Scala' not in N: N.append('Teatro alla Scala')
+    SCA = N.index('Teatro alla Scala'); n_sca = 0
+    for b in d['b']:
+        if b[3] != 3: continue
+        cx, cy = ctr(b[4])
+        if any(inside(cx, cy, o) for o in outer) and not any(inside(cx, cy, h) for h in inner): b[2] = SCA; n_sca += 1
+    print('Teatro alla Scala volumes', n_sca)
+
+# OSM maps the Madonnina as a column from the ground to 108.5 m; only the top 4.16 m is the gilded statue (on the spire tip)
+DUO = N.index('Duomo di Milano')
+for b in [b for b in d['b'] if b[2] == DUO and b[3] == 0 and b[0] > 105]:
+    b[1] = 104.34; d['b'].append([104.34, 98.5, DUO, 0, b[4]]); d['grp'].append(-1)  # gold statue above, marble spire tip below
+
 # OSM stacks tower stages as parts with min_height; where a stage starts above the one under it (the Filarete tower has
 # gaps at 40-45, 50-53 and 60-64 m) it would float, so each kept OSM part is extended down to the top of what is under it
-ctr = lambda f: (sum(f[0::2]) / len(f[0::2]), sum(f[1::2]) / len(f[1::2]))
 for b in d['b']:
     if b[3] == 0 and b[1] > 0 and b[2] not in (GAL, OTT, ARCO, MON):
         cx, cy = ctr(b[4])

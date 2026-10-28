@@ -77,5 +77,3 @@ node roofs.mjs milan.json                          # needs: npm i straight-skele
 python3 -I sun_hours.py milan.json . 2026-06-21 2026-12-21 2026-03-20
 ```
 `milan-osm.json` is the OSM snapshot of 2026-07-15 compacted by `prep.py`.
-
-Built with Claude Code.

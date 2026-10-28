@@ -22,7 +22,7 @@ in Milan. The sun is the real one for any date and time, from the blue hour befo
 ## URL parameters
 | Parameter | Effect |
 |---|---|
-| `?play` | the 24 s day-to-night flyover on 21 June (`&date=YYYY-MM-DD` for another day) |
+| `?play` | the 26 s day-to-night flyover on 21 June (`&date=YYYY-MM-DD` for another day) |
 | `?clean` | hide the controls |
 | `&t=SEC` | freeze the flyover at that second |
 | `?cam=tx,ty,th,az,el,d&m=MIN&date=...` | a still: camera target in m (x east, y north from the centre), height, bearing and elevation in degrees, distance in m, and the clock in minutes |

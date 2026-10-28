@@ -160,7 +160,7 @@ const ring = (f) => { const p = []; for (let i = 0; i < f.length; i += 2) p.push
 const W = (x, h, y) => new THREE.Vector3(x, h, -y); // data (x east, y north) -> three (y up, -z north)
 const inPoly = (x, y, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j];
   if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c; } return c; };
-const U = { uNight: { value: 0 }, uLit: { value: 0 }, uSkyTint: { value: new THREE.Color(0x9fb8d8) } }; // shared shader uniforms
+const U = { uNight: { value: 0 }, uLit: { value: 0 }, uSkyTint: { value: new THREE.Color(0x9fb8d8) }, uFacade: { value: new THREE.Vector2() } }; // shared shader uniforms
 
 // roofs: pyramid fan, dome rings, and a distance-to-edge "skeleton" roof for gabled/hipped shapes
 function roofGeometry(outer, holes, shape, base, rh) {
@@ -194,8 +194,8 @@ const FACADES = [[0xdcae6e, 3], [0xe8c681, 3], [0xd18c62, 2], [0xe2b396, 2], [0x
 const FW = FACADES.reduce((s, [, w]) => s + w, 0);
 const pickFacade = (u) => { for (const [c, w] of FACADES) { if ((u -= w / FW) < 0) return c; } return FACADES[0][0]; };
 const ROOFS = [0xa65e40, 0xb26b4b, 0x98553a, 0xa96a52, 0x96918a, 0xa7a097];
-function look(name, g) { // -> [kind, façade, roof]; kind 0 ordinary (windows), 1 Duomo marble, 2 Galleria (glass roof), 3 plain stone/brick (no windows)
-  if (name === 'Duomo di Milano') return [1, 0xf3e8e2, 0xf0e4de];
+function look(name, g, h) { // -> [kind, façade, roof]; kind 0 ordinary (windows), 1 Duomo marble, 2 Galleria (glass roof), 3 plain stone/brick (no windows)
+  if (name === 'Duomo di Milano') return h >= 105 ? [1, 0xd9a441, 0xd9a441] : [1, 0xf3e8e2, 0xf0e4de]; // the gilded Madonnina on top
   if (name.startsWith('Galleria Vittorio Emanuele')) return [2, 0xead3ae, 0x8ea6b4];
   if (name === 'Castello Sforzesco') return [3, 0xb8653f, 0x9c5236];
   if (/^(Chiesa|Basilica)/.test(name)) return [3, 0xdccfba, 0xa65e40];
@@ -203,7 +203,7 @@ function look(name, g) { // -> [kind, façade, roof]; kind 0 ordinary (windows),
   return [0, pickFacade(hash(g * 7 + 1)), ROOFS[Math.floor(hash(g * 13 + 5) * ROOFS.length)]];
 }
 
-const parts = [], starts = [], info = [];
+const parts = [], starts = [], info = [], DUOMO_PARTS = [];
 let vcount = 0;
 data.b.forEach((b, bi) => {
   const [h, mh, ni, src, outerF, holesF = [], shape = 0, rhTag = -1] = b;
@@ -222,7 +222,8 @@ data.b.forEach((b, bi) => {
   starts.push(vcount); vcount += merged.attributes.position.count;
   const grp = data.grp?.[bi] ?? -1, name = ni >= 0 ? data.names[ni] : '';
   info.push({ h, ni, src, c: outer.reduce((s, p) => s.add(p), new THREE.Vector2()).divideScalar(outer.length),
-    look: look(name, grp >= 0 ? grp : 200000 + (ni >= 0 ? ni : bi)), seed: hash((grp >= 0 ? grp : bi) * 3 + 11) });
+    look: look(name, grp >= 0 ? grp : 200000 + (ni >= 0 ? ni : bi), h), seed: hash((grp >= 0 ? grp : bi) * 3 + 11) });
+  if (name === 'Duomo di Milano') DUOMO_PARTS.push({ outer, top, shape, area });
   parts.push(merged);
 });
 const cityGeo = mergeGeometries(parts);
@@ -255,7 +256,7 @@ cityMat.onBeforeCompile = (s) => {
   s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aRoof; attribute vec2 aK; varying vec3 vWP; varying vec3 vWN; varying vec3 vRoof; varying vec2 vK;')
     .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vWN = normalize(mat3(modelMatrix) * objectNormal); vRoof = aRoof; vK = aK;');
   s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
-uniform float uNight, uLit; uniform vec3 uSkyTint;
+uniform float uNight, uLit; uniform vec3 uSkyTint; uniform vec2 uFacade;
 varying vec3 vWP; varying vec3 vWN; varying vec3 vRoof; varying vec2 vK;
 float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float band(float x, float a, float b) { float w = max(fwidth(x), 1e-4) * 0.8; return smoothstep(a - w, a + w, x) - smoothstep(b - w, b + w, x); }`)
@@ -288,6 +289,16 @@ vec3 gGlow = vec3(0.0);
   gGlow += warm * win * m * on * uNight * 1.15 + vec3(1.0, 0.72, 0.45) * windows * (1.0 - fade) * uLit * 0.3 * uNight;
   gGlow += vec3(1.0, 0.7, 0.4) * roof * isGal * uNight * 0.55;                      // the Galleria's glass roof glows
   c = mix(c, vec3(0.62, 0.7, 0.76), roof * isGal * 0.5);
+  { // the Duomo's west front: five pointed portals, a tall window over each, the great window over the middle one
+    float front = isDuomo * step(0.85, -vWN.x) * step(vWP.x, uFacade.y + 9.0);
+    float dz = vWP.z - uFacade.x, y = vWP.y;
+    float k = clamp(floor(dz / 12.4 + 0.5), -2.0, 2.0), u = abs(dz - k * 12.4), mid = 1.0 - step(0.5, abs(k));
+    float hw = mix(2.2, 3.0, mid), hb = mix(8.0, 10.5, mid);
+    float door = step(u, hw) * step(y, hb + 1.3 * hw * (1.0 - u / hw));
+    float whw = mix(1.3, 3.0, mid), wb = mix(13.0, 20.0, mid), wt = mix(19.0, 31.0, mid);
+    float glaze = step(u, whw) * step(wb, y) * step(y, wt + 1.3 * whw * (1.0 - u / whw));
+    c *= 1.0 - front * (0.68 * door + 0.5 * glaze);
+  }
   { // Duomo walls: buttress ribs every 2.4 m, string courses, lancet windows with pointed heads
     float du = dot(vWP.xz, t) / 2.4, dx = fract(du), y = vWP.y;
     float rib = band(dx, 0.0, 0.1) + band(dx, 0.9, 1.0);
@@ -370,14 +381,17 @@ const tramWin = new THREE.InstancedMesh(new THREE.BoxGeometry(12.9, 0.9, 2.42).t
   new THREE.MeshStandardMaterial({ color: 0x262a31, roughness: 0.25, emissive: 0xffd7a0, emissiveIntensity: 0 }), tramList.length);
 for (const m of [tramBody, tramWin]) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; scene.add(m); }
 const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), UPV = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1), ZERO = new THREE.Vector3();
+function tramPos(t, sec) { // where one tram is at video/clock second sec: data metres, heading, distance along its run
+  const { p, cum, L } = t.r, s = (t.s0 + 8.5 * sec) % L; // ~30 km/h
+  let k = 1; while (k < cum.length - 1 && cum[k] < s) k++;
+  const a = p[k - 1], b = p[k], f = (s - cum[k - 1]) / (cum[k] - cum[k - 1] || 1);
+  return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, ang: Math.atan2(b.y - a.y, b.x - a.x), s, L };
+}
 function placeTrams(sec) {
   tramList.forEach((t, i) => {
-    const { p, cum, L } = t.r, s = (t.s0 + 8.5 * sec) % L; // ~30 km/h
-    let k = 1; while (k < cum.length - 1 && cum[k] < s) k++;
-    const a = p[k - 1], b = p[k], f = (s - cum[k - 1]) / (cum[k] - cum[k - 1] || 1);
-    const edge = Math.min(s, L - s) < 9; // hide while entering / leaving the disc
-    tmpQ.setFromAxisAngle(UPV, Math.atan2(b.y - a.y, b.x - a.x));
-    tmpM.compose(W(a.x + (b.x - a.x) * f, 0.36, a.y + (b.y - a.y) * f), tmpQ, edge ? ZERO : ONE);
+    const q = tramPos(t, sec), edge = Math.min(q.s, q.L - q.s) < 9; // hide while entering / leaving the disc
+    tmpQ.setFromAxisAngle(UPV, q.ang);
+    tmpM.compose(W(q.x, 0.36, q.y), tmpQ, edge ? ZERO : ONE);
     tramBody.setMatrixAt(i, tmpM); tramWin.setMatrixAt(i, tmpM);
   });
   tramBody.instanceMatrix.needsUpdate = tramWin.instanceMatrix.needsUpdate = true;
@@ -391,6 +405,33 @@ const DUOMO = (() => { const ids = info.map((b, i) => [b, i]).filter(([b]) => b.
   const west = Math.min(...ids.map(([, i]) => Math.min(...data.b[i][4].filter((_, k) => k % 2 === 0)))) / 10; // facade line
   return { x: c.x, y: c.y, west, id: ids[0]?.[1] ?? -1 }; })();
 AREAS.forEach((a, k) => { if (inPoly(DUOMO.west - 40, DUOMO.y, a)) piazza = k; });
+U.uFacade.value.set(-DUOMO.y, DUOMO.west);
+
+// the Duomo's forest of marble pinnacles: one on every buttress along the roof edges, and the piers of the west front
+const PINN = [];
+{
+  const pts = [];
+  const along = (poly, step, inset, base, H) => { // points every `step` m along a closed outline, pulled `inset` m inwards
+    const c = poly.reduce((s, p) => s.add(p), new THREE.Vector2()).divideScalar(poly.length);
+    for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length], L = a.distanceTo(b);
+      for (let t = step / 2; t < L; t += step) { const p = a.clone().lerp(b, t / L); p.add(c.clone().sub(p).setLength(inset)); pts.push([p.x, p.y, base, H]); } }
+  };
+  if (DUOMO_PARTS.length) {
+    const block = DUOMO_PARTS.reduce((a, b) => (b.area > a.area ? b : a));
+    along(block.outer, 6.2, 1.2, block.top, 11);
+    for (const p of DUOMO_PARTS) if (p.shape === 3 && p.area > 600) along(p.outer, 6.5, 1.0, p.top, 8.5);
+    [-31, -18.6, -6.2, 6.2, 18.6, 31].forEach((o, i) => pts.push([DUOMO.west - 0.4, DUOMO.y + o, 0, [46, 50, 56, 56, 50, 46][i]]));
+  }
+  const mat = new THREE.MeshStandardMaterial({ color: 0xefe3dd, roughness: 0.8, emissive: 0xf3d9bf, emissiveIntensity: 0 });
+  const shafts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.65, 1, 8).translate(0, 0.5, 0), mat, Math.max(1, pts.length));
+  const tops = new THREE.InstancedMesh(mergeGeometries([new THREE.ConeGeometry(0.75, 3.2, 8).translate(0, 1.6, 0),
+    new THREE.CapsuleGeometry(0.22, 0.6, 2, 6).translate(0, 3.6, 0)]), mat, Math.max(1, pts.length)); // spire and its statue
+  pts.forEach(([x, y, base, H], i) => {
+    shafts.setMatrixAt(i, tmpM.compose(W(x, base, y), tmpQ.identity(), new THREE.Vector3(1, H, 1)));
+    tops.setMatrixAt(i, tmpM.makeTranslation(x, base + H, -y));
+  });
+  for (const m of [shafts, tops]) { m.castShadow = m.receiveShadow = true; scene.add(m); PINN.push(m); }
+}
 AREAS.forEach((a, k) => {
   const A = Math.abs(THREE.ShapeUtils.area(a)), n = Math.min(700, Math.round(A * (k === piazza ? 0.03 : 0.006)));
   const bx = a.map((p) => p.x), by = a.map((p) => p.y), [x0, x1, y0, y1] = [Math.min(...bx), Math.max(...bx), Math.min(...by), Math.max(...by)];
@@ -510,6 +551,7 @@ function setSun(min) {
   lampBulbs.visible = night > 0.01; lampPools.visible = night > 0.01 && !heatPlane.visible;
   lampBulbs.material.color.setRGB(4, 3.4, 2.6).multiplyScalar(night); lampPools.material.opacity = 0.24 * night;
   tramWin.material.emissiveIntensity = 1.6 * night;
+  if (PINN.length) PINN[0].material.emissiveIntensity = 0.5 * night; // floodlit with the Duomo
   for (const m of NIGHTLIT) { m.material.emissive.setRGB(1, 0.78, 0.52); m.material.emissiveIntensity = 0.14 * night; }
   bloom.strength = 0.1 + 0.45 * night; bloom.threshold = 1.2 + 1.5 * (1 - night);
   renderer.toneMappingExposure = 1 + 0.35 * night;
@@ -643,26 +685,55 @@ function place(o) { // o: {tx, ty, th, az (bearing camera from target), el (deg 
   controls.target.copy(t); camera.lookAt(t);
 }
 // play mode: one key every 2 s of video. m = wall-clock minutes (from sunrise r / sunset s); the rest is the camera
-const PLAY_S = 24, PLAY_DATE = Q.get('date') || '2026-06-21';
-const SHOTS = (r, s, n) => [
-  { m: r - 32, tx: DUOMO.x, ty: DUOMO.y, th: 45, az: 38, el: 20, d: 300 },   // blue hour, lamps still on, the Duomo floodlit
-  { m: r - 10, tx: DUOMO.x, ty: DUOMO.y, th: 40, az: 48, el: 24, d: 340 },
-  { m: r + 14, tx: DUOMO.x - 20, ty: DUOMO.y + 20, th: 30, az: 66, el: 29, d: 470 }, // first sun on the spires
-  { m: r + 75, tx: 220, ty: -60, th: 10, az: 96, el: 38, d: 760 },
-  { m: r + 200, tx: 90, ty: 20, th: 0, az: 140, el: 52, d: 980 },
-  { m: n, tx: 0, ty: 40, th: 0, az: 195, el: 60, d: 1120 },                   // noon passes quickly
-  { m: s - 210, tx: -140, ty: 120, th: 0, az: 245, el: 47, d: 940 },
-  { m: s - 100, tx: -330, ty: 240, th: 12, az: 283, el: 30, d: 660 },         // golden hour towards the Castello
-  { m: s - 38, tx: -40, ty: 40, th: 0, az: 292, el: 25, d: 760 },
-  { m: s + 2, tx: 290, ty: DUOMO.y, th: 30, az: 278, el: 20, d: 540 },        // sunset lights up the Duomo's west front
-  { m: s + 26, tx: DUOMO.x - 30, ty: DUOMO.y, th: 30, az: 266, el: 18, d: 430 },
-  { m: s + 50, tx: DUOMO.x - 30, ty: DUOMO.y, th: 32, az: 259, el: 17, d: 395 }, // night: lights on
-  { m: s + 62, tx: DUOMO.x - 30, ty: DUOMO.y, th: 32, az: 255, el: 16, d: 380 },
-];
+const PLAY_S = 26, PLAY_DATE = Q.get('date') || '2026-06-21';
+const HUB = { x: 30, y: -30 }; // the busiest tram crossing in the disc (most track points per 60 m cell)
+function runPoint(r, s) { // point at distance s along a tram run
+  let k = 1; while (k < r.cum.length - 1 && r.cum[k] < s) k++;
+  return r.p[k - 1].clone().lerp(r.p[k], (s - r.cum[k - 1]) / (r.cum[k] - r.cum[k - 1] || 1));
+}
+function tramShot(t0, t1) { // chase one tram from video second t0 to t1, camera right behind it along a straight street
+  let best = null;
+  for (const t of tramList) {
+    const a = tramPos(t, t0), b = tramPos(t, t1);
+    if (b.s < a.s || a.s < 110 || b.L - b.s < 40) continue; // no wrap; room behind for the camera; not at the disc edge
+    const p0 = runPoint(t.r, a.s - 100), p1 = runPoint(t.r, b.s + 15), dir = p1.clone().sub(p0).normalize();
+    let dev = 0; // how far the track strays from a straight line over the stretch the camera sees
+    for (let x = a.s - 100; x <= b.s + 15; x += 4) { const q = runPoint(t.r, x).sub(p0); dev = Math.max(dev, Math.abs(q.x * dir.y - q.y * dir.x)); }
+    if (dev > 2.5) continue;
+    const dist = Math.hypot((a.x + b.x) / 2 - HUB.x, (a.y + b.y) / 2 - HUB.y);
+    if (!best || dist < best.dist) best = { a, b, dist, ang: Math.atan2(dir.y, dir.x) };
+  }
+  if (!best) return [{ tx: HUB.x, ty: HUB.y, th: 0, az: 120, el: 40, d: 300 }, { tx: HUB.x, ty: HUB.y, th: 0, az: 125, el: 42, d: 320 }];
+  const az = 90 - best.ang / RAD + 180; // compass bearing from the tram back along the street
+  return [best.a, best.b].map((q) => ({ tx: q.x, ty: q.y, th: 3, az, el: 39, d: 70, hold: 1 }));
+}
+const SHOTS = (r, s, n) => {
+  const [ta, tb] = tramShot(6, 8);
+  const k = [
+    { m: r - 32, tx: DUOMO.x, ty: DUOMO.y, th: 45, az: 38, el: 20, d: 300 },   // blue hour, lamps still on, the Duomo floodlit
+    { m: r - 10, tx: DUOMO.x, ty: DUOMO.y, th: 40, az: 48, el: 24, d: 340 },
+    { m: r + 14, tx: DUOMO.x - 20, ty: DUOMO.y + 20, th: 30, az: 66, el: 29, d: 470 }, // first sun on the spires
+    { m: r + 55, ...ta },                                                        // follow a tram through the centre
+    { m: r + 95, ...tb },
+    { m: r + 220, tx: 90, ty: 20, th: 0, az: 140, el: 52, d: 980 },
+    { m: n, tx: 0, ty: 40, th: 0, az: 195, el: 60, d: 1120 },                   // noon passes quickly
+    { m: s - 210, tx: -140, ty: 120, th: 0, az: 245, el: 47, d: 940 },
+    { m: s - 100, tx: -330, ty: 240, th: 12, az: 283, el: 30, d: 660 },         // golden hour towards the Castello
+    { m: s - 38, tx: -40, ty: 40, th: 0, az: 292, el: 25, d: 760 },
+    { m: s + 2, tx: 290, ty: DUOMO.y, th: 30, az: 278, el: 20, d: 540 },        // sunset lights up the Duomo's west front
+    { m: s + 26, tx: DUOMO.x - 30, ty: DUOMO.y, th: 30, az: 266, el: 18, d: 430 },
+    { m: s + 50, tx: DUOMO.x - 30, ty: DUOMO.y, th: 32, az: 259, el: 17, d: 395 }, // night: lights on
+    { m: s + 62, tx: DUOMO.x - 30, ty: DUOMO.y, th: 32, az: 255, el: 16, d: 380 },
+  ];
+  for (let i = 1; i < k.length; i++) { while (k[i].az - k[i - 1].az > 180) k[i].az -= 360; while (k[i].az - k[i - 1].az < -180) k[i].az += 360; } // shortest turn
+  k.forEach((o) => { o.hold ??= 0; });
+  return k;
+};
 const cr = (p0, p1, p2, p3, t) => 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t);
 function shotAt(keys, u) { // Catmull-Rom through keys, u in 0..1
   const n = keys.length - 1, x = Math.min(u, 0.99999) * n, i = Math.floor(x), t = x - i, o = {};
-  for (const k of Object.keys(keys[0])) o[k] = cr(keys[Math.max(i - 1, 0)][k], keys[i][k], keys[i + 1][k], keys[Math.min(i + 2, n)][k], t);
+  const A = keys[i], B = keys[i + 1], e = A.hold && B.hold ? t : t * t * (3 - 2 * t); // tram chase: straight line; next to it: eased, no overshoot
+  for (const k of Object.keys(keys[0])) o[k] = A.hold || B.hold ? A[k] + (B[k] - A[k]) * e : cr(keys[Math.max(i - 1, 0)][k], A[k], B[k], keys[Math.min(i + 2, n)][k], t);
   return o;
 }
 
@@ -679,7 +750,7 @@ else {
   const today = romeToday(); setDate(Q.get('date') || today, false);
   const p = romeParts(Date.now()), now = +p.hour * 60 + +p.minute;
   setSun(now > state.rise - 40 && now < state.set + 70 ? now : state.set - 55);
-  const s0 = SHOTS(state.rise, state.set, 720)[5]; place({ ...s0, ...(innerWidth / innerHeight < 0.9 ? { d: 1400, el: 50 } : {}) });
+  const s0 = SHOTS(state.rise, state.set, 720)[6]; place({ ...s0, ...(innerWidth / innerHeight < 0.9 ? { d: 1400, el: 50 } : {}) });
   if (Q.has('cam')) { const [tx, ty, th, az, el, d] = Q.get('cam').split(',').map(Number); place({ tx, ty, th, az, el, d }); }
   if (Q.has('m')) setSun(+Q.get('m'));
   if (Q.has('heat')) await showHeat(true);

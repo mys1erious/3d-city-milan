@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Milan, one day of light</title>
+<style>
+  :root { --ink: #1c2230; --soft: rgba(28, 34, 48, .62); --glass: rgba(255, 255, 255, .74); --accent: #3f6df2; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #e9e4dc; color: var(--ink);
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #scrim { position: fixed; left: 0; right: 0; top: 0; height: 34vh; pointer-events: none; }
+  #hud { position: fixed; left: max(16px, 3.2vmin); top: max(14px, 3vmin); pointer-events: none; line-height: 1.05;
+    text-shadow: 0 0 .5em rgba(255, 255, 255, .9), 0 0 .15em rgba(255, 255, 255, .9); transition: color .4s; }
+  #kicker { font-size: clamp(12px, 2.3vmin, 26px); font-weight: 600; letter-spacing: .02em; color: var(--soft); }
+  #clock { font-size: clamp(40px, 8.4vmin, 110px); font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: .12em; }
+  #date { font-size: clamp(15px, 3.1vmin, 36px); font-weight: 600; margin-top: .15em; }
+  #sun { font-size: clamp(12px, 2.3vmin, 26px); color: rgba(28, 34, 48, .8); margin-top: .45em; font-variant-numeric: tabular-nums; }
+  .dark #hud { color: #fff; text-shadow: 0 0 .6em rgba(0, 0, 0, .55), 0 0 .15em rgba(0, 0, 0, .5); }
+  .dark #kicker { color: rgba(255, 255, 255, .72); } .dark #sun { color: rgba(255, 255, 255, .86); }
+  .dark #credit { background: rgba(0, 0, 0, .34); color: rgba(255, 255, 255, .72); }
+  #legend { margin-top: .8em; font-size: clamp(12px, 2.1vmin, 24px); font-weight: 600; padding: .65em .8em .7em; border-radius: .8em; width: max-content; max-width: 24em;
+    background: rgba(255, 255, 255, .72); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); text-shadow: none; }
+  .dark #legend { background: rgba(10, 14, 30, .55); }
+  .clean.heat #clock, .clean.heat #sun { display: none; } /* stills of the map: the clock is not what it shows */
+  #legend .bar { height: .5em; width: 14em; border-radius: 99px; margin-top: .4em; background: linear-gradient(90deg, #3a2618, #9c6a3a, #ffd98a); }
+  #legend .ticks { display: flex; justify-content: space-between; width: 14em; font-weight: 500; opacity: .8; margin-top: .2em; }
+  #legend .ticks span { font-size: .78em; }
+  #legend .note { font-size: .78em; font-weight: 500; opacity: .8; margin-top: .35em; max-width: 22em; line-height: 1.25; }
+  #tip { position: fixed; left: 0; top: 0; pointer-events: none; display: none; padding: 7px 11px; border-radius: 10px;
+    background: rgba(20, 24, 34, .86); color: #fff; font-size: 14px; line-height: 1.3; white-space: nowrap; transform: translate(-50%, calc(-100% - 14px)); }
+  #tip b { font-weight: 650; } #tip span { opacity: .72; }
+  #panel { position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    width: min(640px, calc(100% - 32px)); padding: 12px 14px 10px; border-radius: 16px; background: var(--glass);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 8px 30px rgba(40, 30, 20, .14); }
+  #panel input[type=range] { width: 100%; margin: 0; accent-color: #e0893a; height: 28px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; font-size: 14px; }
+  .row button, .row input[type=date] { font: inherit; color: var(--ink); background: rgba(255, 255, 255, .85); border: 1px solid rgba(28, 34, 48, .14);
+    border-radius: 9px; padding: 6px 10px; min-height: 34px; cursor: pointer; }
+  .row button.on { background: var(--ink); color: #fff; }
+  #play { width: 44px; font-weight: 700; }
+  .grow { flex: 1; }
+  #hint { color: var(--soft); font-size: 12.5px; }
+  .attr { font-size: 11px; color: var(--soft); margin-top: 7px; } .attr a { color: inherit; }
+  #credit { display: none; position: fixed; color: var(--soft); pointer-events: none; background: rgba(255, 255, 255, .62); padding: .3em .7em; border-radius: 99px; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 15px; color: var(--soft); pointer-events: none; }
+  .clean #panel, .clean #hint { display: none; }
+  .clean #credit { display: block; bottom: 2.2vmin; right: 3vmin; font-size: 1.7vmin; }
+  .clean #kicker { font-size: 2.6vmin; } .clean #clock { font-size: 10vmin; } .clean #date { font-size: 3.4vmin; } .clean #sun { font-size: 2.6vmin; }
+  @media (max-width: 560px) { #hint, .grow { display: none; } #panel { padding: 10px 10px 9px; } .row { gap: 6px; font-size: 13px; flex-wrap: wrap; }
+    .row button, .row input[type=date] { padding: 5px 7px; } .row input[type=date] { flex: 1 1 110px; min-width: 110px; } .row button { flex: none; white-space: nowrap; } #play { width: 36px; } }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="c" aria-label="3D model of central Milan lit by the real sun, from sunrise to night"></canvas>
+<div id="scrim"></div>
+<div id="hud">
+  <div id="kicker">Milan · 10,023 surveyed buildings · the real sun</div>
+  <div id="clock">--:--</div>
+  <div id="date"></div>
+  <div id="sun"></div>
+  <div id="legend" hidden><div id="lgTitle"></div><div class="bar"></div><div class="ticks"><span>0 h</span><span>5 h</span><span>10 h</span><span>15 h</span></div><div class="note" id="lgNote"></div></div>
+</div>
+<div id="tip"></div>
+<div id="panel">
+  <input id="time" type="range" step="1" aria-label="Time of day">
+  <div class="row">
+    <button id="play" aria-label="Play the day">▶</button>
+    <input id="day" type="date" aria-label="Date">
+    <button data-d="06-21">21 Jun</button><button data-d="12-21">21 Dec</button><button data-d="today">Today</button><button id="heat" aria-pressed="false">☀ Sun hours</button>
+    <span class="grow"></span><span id="hint">drag to orbit · scroll to zoom · hover a building or street</span>
+  </div>
+  <div class="attr">Buildings &amp; trees: <a href="https://dati.comune.milano.it/dataset/ds2889_database-topografico-dbt-2020-shp">Comune di Milano, DBT 2020</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC-BY 4.0</a>, modified (merged with OSM) · <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · built with Claude Code</div>
+</div>
+<div id="credit">Buildings &amp; trees: Comune di Milano DBT 2020, CC-BY 4.0, modified · © OpenStreetMap contributors · built with Claude Code</div>
+<div id="loading">loading 10,000 buildings…</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const Q = new URLSearchParams(location.search), CLEAN = Q.has('clean'), PLAY = Q.has('play'), FREEZE = Q.has('t') ? +Q.get('t') : null;
+if (CLEAN) document.body.classList.add('clean');
+const LAT = 45.464, LON = 9.190, $ = (id) => document.getElementById(id);
+const COARSE = matchMedia('(pointer: coarse)').matches;
+
+// SOLAR-BEGIN  NOAA solar position (spreadsheet formulas). ms = UTC epoch ms; returns degrees.
+// alt = refraction-corrected altitude, alt0 = geometric, az = compass bearing (0 = north, 90 = east)
+const RAD = Math.PI / 180;
+function sunPosition(ms, lat, lon) {
+  const jd = ms / 864e5 + 2440587.5, T = (jd - 2451545) / 36525;
+  const L0 = (280.46646 + T * (36000.76983 + T * 0.0003032)) % 360;
+  const M = 357.52911 + T * (35999.05029 - 0.0001537 * T);
+  const e = 0.016708634 - T * (0.000042037 + 0.0000001267 * T);
+  const C = Math.sin(M * RAD) * (1.914602 - T * (0.004817 + 0.000014 * T)) + Math.sin(2 * M * RAD) * (0.019993 - 0.000101 * T) + Math.sin(3 * M * RAD) * 0.000289;
+  const omega = 125.04 - 1934.136 * T;
+  const lambda = L0 + C - 0.00569 - 0.00478 * Math.sin(omega * RAD);
+  const eps = 23 + (26 + (21.448 - T * (46.815 + T * (0.00059 - T * 0.001813))) / 60) / 60 + 0.00256 * Math.cos(omega * RAD);
+  const decl = Math.asin(Math.sin(eps * RAD) * Math.sin(lambda * RAD));
+  const y = Math.tan(eps * RAD / 2) ** 2;
+  const eot = 4 / RAD * (y * Math.sin(2 * L0 * RAD) - 2 * e * Math.sin(M * RAD) + 4 * e * y * Math.sin(M * RAD) * Math.cos(2 * L0 * RAD)
+    - 0.5 * y * y * Math.sin(4 * L0 * RAD) - 1.25 * e * e * Math.sin(2 * M * RAD)); // equation of time, minutes
+  const utcMin = ((ms % 864e5) + 864e5) % 864e5 / 6e4;
+  const ha = ((utcMin + eot + 4 * lon) / 4 - 180) * RAD;
+  const la = lat * RAD;
+  const alt0 = Math.asin(Math.sin(la) * Math.sin(decl) + Math.cos(la) * Math.cos(decl) * Math.cos(ha)) / RAD;
+  const az = (Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(la) - Math.tan(decl) * Math.cos(la)) / RAD + 540) % 360;
+  const te = Math.tan(alt0 * RAD);
+  const refr = alt0 > 85 ? 0 : alt0 > 5 ? 58.1 / te - 0.07 / te ** 3 + 0.000086 / te ** 5
+    : alt0 > -0.575 ? 1735 + alt0 * (-518.2 + alt0 * (103.4 + alt0 * (-12.79 + alt0 * 0.711))) : -20.774 / te;
+  return { alt: alt0 + refr / 3600, alt0, az };
+}
+// SOLAR-END
+// self-check against astronomy-engine 2.1.19 (see README): Milan solar noon altitude 28 Oct and 21 Jun 2026
+console.assert(Math.abs(sunPosition(Date.parse('2026-10-28T11:06Z'), LAT, LON).alt - 31.36) < 0.05, 'solar check 28 Oct');
+console.assert(Math.abs(sunPosition(Date.parse('2026-06-21T11:25Z'), LAT, LON).alt - 67.98) < 0.05, 'solar check 21 Jun');
+
+// Europe/Rome wall clock <-> UTC through Intl (CET/CEST handled by the platform)
+const romeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+const romeParts = (ms) => Object.fromEntries(romeFmt.formatToParts(ms).map((p) => [p.type, p.value]));
+const offsetMin = (ms) => { const p = romeParts(ms); return (Date.UTC(+p.year, p.month - 1, +p.day, +p.hour, +p.minute) - Math.floor(ms / 6e4) * 6e4) / 6e4; };
+function romeToUTC(date, min) { const g = Date.parse(date + 'T00:00:00Z') + min * 6e4; return g - offsetMin(g - offsetMin(g) * 6e4) * 6e4; }
+function dayLimits(date) { // sunrise / sunset in Rome minutes: geometric centre at -0.833 deg
+  const up = (m) => sunPosition(romeToUTC(date, m), LAT, LON).alt0 > -0.833;
+  const edge = (a, b) => { for (let i = 0; i < 20; i++) { const m = (a + b) / 2; if (up(m) === up(a)) a = m; else b = m; } return (a + b) / 2; };
+  let rise = 0, set = 1440;
+  for (let m = 0; m < 1440; m += 10) { if (!up(m) && up(m + 10)) rise = edge(m, m + 10); if (up(m) && !up(m + 10)) set = edge(m, m + 10); }
+  return { rise, set };
+}
+const hhmm = (m) => { m = ((m % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(Math.floor(m % 60)).padStart(2, '0')}`; };
+const hash = (i) => { let x = Math.imul((i | 0) ^ 0x9e3779b9, 0x85ebca6b); x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); x ^= x >>> 16; return (x >>> 0) / 4294967296; };
+
+// ---------- scene ----------
+const canvas = $('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: CLEAN });
+renderer.setPixelRatio(CLEAN ? 2 : Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 4, 20000);
+const controls = new OrbitControls(camera, canvas);
+Object.assign(controls, { enableDamping: true, dampingFactor: 0.08, minDistance: 40, maxDistance: 3200, maxPolarAngle: 1.45, zoomSpeed: 0.8 });
+
+const data = await (await fetch('data/milan.json')).json();
+const R = data.radius;
+const ring = (f) => { const p = []; for (let i = 0; i < f.length; i += 2) p.push(new THREE.Vector2(f[i] / 10, f[i + 1] / 10)); return p; };
+const W = (x, h, y) => new THREE.Vector3(x, h, -y); // data (x east, y north) -> three (y up, -z north)
+const inPoly = (x, y, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j];
+  if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c; } return c; };
+const U = { uNight: { value: 0 }, uLit: { value: 0 }, uSkyTint: { value: new THREE.Color(0x9fb8d8) } }; // shared shader uniforms
+
+// roofs: pyramid fan, dome rings, and a distance-to-edge "skeleton" roof for gabled/hipped shapes
+function roofGeometry(outer, holes, shape, base, rh) {
+  const pos = [];
+  const tri = (a, b, c) => { const n = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)); if (n.y < 0) [b, c] = [c, b]; pos.push(...a, ...b, ...c); };
+  const c = outer.reduce((s, p) => s.add(p), new THREE.Vector2()).divideScalar(outer.length);
+  if (shape === 1) for (let i = 0; i < outer.length; i++) { const p = outer[i], q = outer[(i + 1) % outer.length]; tri(W(p.x, base, p.y), W(q.x, base, q.y), W(c.x, base + rh, c.y)); }
+  else if (shape === 2) {
+    const K = 5, at = (p, k) => { const a = k / K * Math.PI / 2, s = Math.cos(a); return W(c.x + (p.x - c.x) * s, base + rh * Math.sin(a), c.y + (p.y - c.y) * s); };
+    for (let k = 0; k < K; k++) for (let i = 0; i < outer.length; i++) { const p = outer[i], q = outer[(i + 1) % outer.length];
+      tri(at(p, k), at(q, k), at(q, k + 1)); if (k < K - 1) tri(at(p, k), at(q, k + 1), at(p, k + 1)); }
+  } else {
+    const rings = [outer, ...holes], all = rings.flat(), tris = THREE.ShapeUtils.triangulateShape(outer, holes);
+    const segD = (x, y, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(x - a.x - dx * t, y - a.y - dy * t); };
+    const dist = (x, y) => { let m = 1e9; for (const r of rings) for (let i = 0; i < r.length; i++) m = Math.min(m, segD(x, y, r[i], r[(i + 1) % r.length])); return m; };
+    let dmax = 0.5;
+    for (const [a, b, d] of tris) dmax = Math.max(dmax, dist((all[a].x + all[b].x + all[d].x) / 3, (all[a].y + all[b].y + all[d].y) / 3));
+    const lift = (x, y) => W(x, base + rh * Math.min(1, dist(x, y) / dmax), y);
+    for (const [ia, ib, id] of tris) {
+      const A = all[ia], B = all[ib], D = all[id];
+      const n = Math.min(14, Math.max(1, Math.ceil(Math.max(A.distanceTo(B), B.distanceTo(D), D.distanceTo(A)) / (dmax / 2.5))));
+      const P = (i, j) => { const u = i / n, v = j / n; return lift(A.x + (B.x - A.x) * u + (D.x - A.x) * v, A.y + (B.y - A.y) * u + (D.y - A.y) * v); };
+      for (let i = 0; i < n; i++) for (let j = 0; j < n - i; j++) { tri(P(i, j), P(i + 1, j), P(i, j + 1)); if (i + j < n - 1) tri(P(i + 1, j), P(i + 1, j + 1), P(i, j + 1)); }
+    }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); return g;
+}
+
+// Milan look: stucco façades (ochre, Maria Theresa yellow, terracotta, salmon, cream, stone), coppi roofs or grey flat roofs
+const FACADES = [[0xdcae6e, 3], [0xe8c681, 3], [0xd18c62, 2], [0xe2b396, 2], [0xebdabd, 3], [0xcfc2ad, 2], [0xf1e8da, 2], [0xc69c7a, 1]];
+const FW = FACADES.reduce((s, [, w]) => s + w, 0);
+const pickFacade = (u) => { for (const [c, w] of FACADES) { if ((u -= w / FW) < 0) return c; } return FACADES[0][0]; };
+const ROOFS = [0xa65e40, 0xb26b4b, 0x98553a, 0xa96a52, 0x96918a, 0xa7a097];
+function look(name, g) { // -> [kind, façade, roof]; kind 0 ordinary (windows), 1 Duomo marble, 2 Galleria (glass roof), 3 plain stone/brick (no windows)
+  if (name === 'Duomo di Milano') return [1, 0xf3e8e2, 0xf0e4de];
+  if (name.startsWith('Galleria Vittorio Emanuele')) return [2, 0xead3ae, 0x8ea6b4];
+  if (name === 'Castello Sforzesco') return [3, 0xb8653f, 0x9c5236];
+  if (/^(Chiesa|Basilica)/.test(name)) return [3, 0xdccfba, 0xa65e40];
+  if (name === 'Torre Velasca') return [0, 0xc9a48c, 0x9a958e];
+  return [0, pickFacade(hash(g * 7 + 1)), ROOFS[Math.floor(hash(g * 13 + 5) * ROOFS.length)]];
+}
+
+const parts = [], starts = [], info = [];
+let vcount = 0;
+data.b.forEach((b, bi) => {
+  const [h, mh, ni, src, outerF, holesF = [], shape = 0, rhTag = -1] = b;
+  const outer = ring(outerF), holes = holesF.map(ring);
+  if (THREE.ShapeUtils.isClockWise(outer)) outer.reverse();
+  holes.forEach((hr) => { if (!THREE.ShapeUtils.isClockWise(hr)) hr.reverse(); });
+  const area = Math.abs(THREE.ShapeUtils.area(outer));
+  const rh = shape ? Math.min(h - mh - 0.5, rhTag > 0 ? rhTag : Math.min(0.45 * (h - mh), 0.5 * Math.sqrt(area))) : 0;
+  const top = h - Math.max(0, rh);
+  const shp = new THREE.Shape(outer); shp.holes = holes.map((hr) => new THREE.Path(hr));
+  const g = new THREE.ExtrudeGeometry(shp, { depth: Math.max(0.3, top - mh), bevelEnabled: false });
+  g.rotateX(-Math.PI / 2); g.translate(0, mh, 0); g.deleteAttribute('uv');
+  const geos = [g];
+  if (shape && rh > 0.3) geos.push(roofGeometry(outer, holes, shape, top, rh));
+  const merged = geos.length > 1 ? mergeGeometries(geos) : g;
+  starts.push(vcount); vcount += merged.attributes.position.count;
+  const grp = data.grp?.[bi] ?? -1, name = ni >= 0 ? data.names[ni] : '';
+  info.push({ h, ni, src, c: outer.reduce((s, p) => s.add(p), new THREE.Vector2()).divideScalar(outer.length),
+    look: look(name, grp >= 0 ? grp : 200000 + (ni >= 0 ? ni : bi)), seed: hash((grp >= 0 ? grp : bi) * 3 + 11) });
+  parts.push(merged);
+});
+const cityGeo = mergeGeometries(parts);
+parts.forEach((g) => g.dispose());
+{ // sliver triangles get a zero normal; normalize(0) is NaN in the shader and bloom smears one NaN pixel into a black box
+  const nm = cityGeo.attributes.normal.array;
+  for (let i = 0; i < nm.length; i += 3) if (nm[i] * nm[i] + nm[i + 1] * nm[i + 1] + nm[i + 2] * nm[i + 2] < 1e-12) nm[i + 1] = 1;
+}
+const colors = new Float32Array(vcount * 3), roofs = new Float32Array(vcount * 3), kinds = new Float32Array(vcount * 2);
+const tc = new THREE.Color();
+function paintOne(i, fac, roof) {
+  const s = starts[i], e = i + 1 < starts.length ? starts[i + 1] : vcount;
+  tc.set(fac); const [fr, fg, fb] = [tc.r, tc.g, tc.b]; tc.set(roof);
+  for (let v = s; v < e; v++) { colors[v * 3] = fr; colors[v * 3 + 1] = fg; colors[v * 3 + 2] = fb; roofs[v * 3] = tc.r; roofs[v * 3 + 1] = tc.g; roofs[v * 3 + 2] = tc.b; }
+}
+info.forEach((b, i) => {
+  paintOne(i, b.look[1], b.look[2]);
+  const s = starts[i], e = i + 1 < starts.length ? starts[i + 1] : vcount;
+  for (let v = s; v < e; v++) { kinds[v * 2] = b.look[0]; kinds[v * 2 + 1] = b.seed; }
+});
+cityGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+cityGeo.setAttribute('aRoof', new THREE.BufferAttribute(roofs, 3));
+cityGeo.setAttribute('aK', new THREE.BufferAttribute(kinds, 2));
+
+// façade shader: roofs, a stone street-level band, windows with shutters (anti-aliased, fading to an average far away),
+// lit windows at night, the floodlit Duomo and the glowing Galleria roof
+const cityMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.86, metalness: 0, vertexColors: true });
+cityMat.onBeforeCompile = (s) => {
+  Object.assign(s.uniforms, U);
+  s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aRoof; attribute vec2 aK; varying vec3 vWP; varying vec3 vWN; varying vec3 vRoof; varying vec2 vK;')
+    .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vWN = normalize(mat3(modelMatrix) * objectNormal); vRoof = aRoof; vK = aK;');
+  s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+uniform float uNight, uLit; uniform vec3 uSkyTint;
+varying vec3 vWP; varying vec3 vWN; varying vec3 vRoof; varying vec2 vK;
+float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float band(float x, float a, float b) { float w = max(fwidth(x), 1e-4) * 0.8; return smoothstep(a - w, a + w, x) - smoothstep(b - w, b + w, x); }`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+vec3 gGlow = vec3(0.0);
+{
+  float kind = vK.x, seed = vK.y;
+  float roof = smoothstep(0.3, 0.45, vWN.y), wall = 1.0 - roof;
+  float isDuomo = step(0.5, kind) * step(kind, 1.5), isGal = step(1.5, kind) * step(kind, 2.5);
+  float windows = wall * (1.0 - step(2.5, kind)) * (1.0 - isDuomo);   // ordinary buildings and the Galleria
+  vec3 alb = mix(diffuseColor.rgb, vRoof, roof);
+  alb *= mix(1.0, 0.8, windows * (1.0 - isGal) * (1.0 - step(4.0, vWP.y)));        // stone plinth at street level
+  vec2 t = vec2(-vWN.z, vWN.x); t = dot(t, t) > 1e-8 ? normalize(t) : vec2(1.0, 0.0);   // wall direction (roofs have none)
+  float u = dot(vWP.xz, t) / 3.6 + seed * 7.0, v = vWP.y / 3.4;
+  vec2 cell = vec2(floor(u), floor(v)); float fx = fract(u), fy = fract(v);
+  float fade = 1.0 - smoothstep(0.22, 0.55, max(fwidth(u), fwidth(v)));
+  float gf = 1.0 - step(1.0, v);                                        // ground floor: tall shop windows, no shutters
+  float win = band(fx, 0.34, 0.66) * mix(band(fy, 0.3, 0.84), band(fy, 0.1, 0.9), gf);
+  float shut = (band(fx, 0.19, 0.33) + band(fx, 0.67, 0.81)) * band(fy, 0.3, 0.84) * (1.0 - gf) * (1.0 - isGal);
+  float closed = step(0.74, h21(cell + seed * 13.1)) * (1.0 - gf) * (1.0 - isGal);
+  vec3 shutCol = mix(vec3(0.19, 0.26, 0.19), vec3(0.34, 0.23, 0.15), step(0.55, fract(seed * 3.7)));
+  vec3 glass = mix(alb * 0.2, uSkyTint * 0.32, 0.45);
+  float m = windows * fade;
+  vec3 c = mix(alb, shutCol, shut * m * (1.0 - closed));
+  c = mix(c, mix(glass, shutCol, closed), win * m);
+  c = mix(c, alb * 0.88, windows * (1.0 - fade));                      // far away: the average of a window grid
+  float on = step(h21(cell * 1.7 + seed), uLit) * (1.0 - closed);
+  vec3 warm = mix(vec3(1.0, 0.7, 0.4), vec3(0.82, 0.88, 1.0), step(0.82, h21(cell + 3.1)));
+  gGlow += alb * vec3(1.0, 0.82, 0.6) * wall * (1.0 - isDuomo) * uNight * 0.16 * (1.0 - smoothstep(0.0, 13.0, vWP.y));   // street light on the lower walls
+  gGlow += warm * win * m * on * uNight * 1.15 + vec3(1.0, 0.72, 0.45) * windows * (1.0 - fade) * uLit * 0.3 * uNight;
+  gGlow += vec3(1.0, 0.7, 0.4) * roof * isGal * uNight * 0.55;                      // the Galleria's glass roof glows
+  c = mix(c, vec3(0.62, 0.7, 0.76), roof * isGal * 0.5);
+  { // Duomo walls: buttress ribs every 2.4 m, string courses, lancet windows with pointed heads
+    float du = dot(vWP.xz, t) / 2.4, dx = fract(du), y = vWP.y;
+    float rib = band(dx, 0.0, 0.1) + band(dx, 0.9, 1.0);
+    float course = band(fract(y / 9.0), 0.0, 0.04);
+    float lancet = band(dx, 0.36, 0.64) * band(y, 9.0, 24.0 + 1.6 * (0.14 - abs(dx - 0.5)) / 0.14) * step(0.5, fract(floor(du) * 0.5 + 0.25));
+    float fadeD = 1.0 - smoothstep(0.25, 0.6, fwidth(du));
+    c *= 1.0 - isDuomo * wall * (0.16 * rib + 0.1 * course + 0.42 * lancet) * fadeD - isDuomo * wall * 0.08 * (1.0 - fadeD);
+  }
+  // the Duomo is floodlit at night: strongest from the piazza (west), softer from the sides, so the spires keep their relief
+  vec3 n = normalize(vWN);
+  float flood = 0.06 + 0.62 * max(dot(n, normalize(vec3(-1.0, 0.25, 0.15))), 0.0) + 0.3 * max(dot(n, normalize(vec3(0.2, 0.3, 1.0))), 0.0) + 0.3 * max(dot(n, normalize(vec3(0.2, 0.3, -1.0))), 0.0);
+  gGlow += c * vec3(1.0, 0.84, 0.64) * isDuomo * uNight * 0.85 * flood * (0.55 + 0.45 * smoothstep(0.0, 80.0, vWP.y));
+  diffuseColor.rgb = c * mix(0.86, 1.0, smoothstep(0.0, 10.0, vWP.y));  // a little extra occlusion at street level
+}`)
+    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += gGlow;');
+};
+const city = new THREE.Mesh(cityGeo, cityMat);
+city.castShadow = city.receiveShadow = true;
+scene.add(city);
+
+// ground disc, plinth edge, streets, tram beds, piazzas, parks
+const ground = new THREE.Mesh(new THREE.CircleGeometry(R, 192).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xbfb7aa, roughness: 1 }));
+ground.receiveShadow = true; scene.add(ground);
+const plinth = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 26, 192, 1, true).translate(0, -13, 0), new THREE.MeshStandardMaterial({ color: 0x77716a, roughness: 1 }));
+scene.add(plinth);
+const NIGHTLIT = []; // street surfaces that take a warm tone when the lamps are on
+function flatLayer(polys, color, y, off = -1) {
+  const geos = polys.map((f) => { const g = new THREE.ShapeGeometry(new THREE.Shape(ring(f))); g.rotateX(-Math.PI / 2); g.translate(0, y, 0); g.deleteAttribute('uv'); return g; });
+  const m = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshStandardMaterial({ color, roughness: 1, polygonOffset: true, polygonOffsetFactor: off, polygonOffsetUnits: off * 2 }));
+  m.receiveShadow = true; scene.add(m); return m;
+}
+function ribbons(lines, y, color, off) { // a quad per segment and an octagon per joint; lines: [[halfWidth, Vector2[]], ...]
+  const pos = [];
+  const tri = (a, b, c) => { if ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) < 0) [b, c] = [c, b]; pos.push(a.x, y, -a.y, b.x, y, -b.y, c.x, y, -c.y); }; // CCW = faces up
+  const V = (x, yy) => new THREE.Vector2(x, yy);
+  for (const [hw, p] of lines) for (let i = 0; i < p.length - 1; i++) {
+    const d = new THREE.Vector2().subVectors(p[i + 1], p[i]); if (d.lengthSq() < 1e-4) continue;
+    const nrm = new THREE.Vector2(-d.y, d.x).normalize().multiplyScalar(hw);
+    const a = p[i].clone().add(nrm), b = p[i].clone().sub(nrm), c = p[i + 1].clone().sub(nrm), e = p[i + 1].clone().add(nrm);
+    tri(a, b, c); tri(a, c, e);
+    if (i) for (let k = 0; k < 8; k++) { const t0 = k * Math.PI / 4, t1 = (k + 1) * Math.PI / 4;
+      tri(p[i], V(p[i].x + Math.cos(t0) * hw, p[i].y + Math.sin(t0) * hw), V(p[i].x + Math.cos(t1) * hw, p[i].y + Math.sin(t1) * hw)); }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(pos.length).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 1, polygonOffset: true, polygonOffsetFactor: off, polygonOffsetUnits: off * 2 }));
+  m.receiveShadow = true; scene.add(m); return m;
+}
+flatLayer(data.green.filter((f) => Math.abs(THREE.ShapeUtils.area(ring(f))) > 600), 0x95a46c, 0.15); // skip flower beds
+const roadLines = data.roads.map(([w, f]) => [w / 2, ring(f)]);
+NIGHTLIT.push(ribbons(roadLines, 0.3, 0x96918a, -2), flatLayer(data.areas, 0xd9cfbf, 0.32, -3)); // streets; piazzas and pedestrian streets in pale stone
+const TRAMS = (data.trams || []).map(([ref, f]) => { const p = ring(f), cum = [0];
+  for (let i = 1; i < p.length; i++) cum.push(cum[i - 1] + p[i].distanceTo(p[i - 1])); return { ref, p, cum, L: cum[cum.length - 1] }; });
+NIGHTLIT.push(ribbons(TRAMS.map((t) => [1.35, t.p]), 0.36, 0x857a72, -4)); // tram beds in porphyry setts
+
+// trees (DBT survey points): low-poly crowns and trunks
+const TREES = []; for (let i = 0; i < (data.trees || []).length; i += 2) TREES.push([data.trees[i] / 10, data.trees[i + 1] / 10]);
+const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), TREES.length);
+const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.3, 1, 5).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x5b4636, roughness: 1 }), TREES.length);
+{
+  const M = new THREE.Matrix4(), q = new THREE.Quaternion(), GREENS = [0x5f7d3e, 0x6e8a45, 0x7d9550, 0x587438, 0x86995a];
+  TREES.forEach(([x, y], i) => {
+    const r = 2.3 + 1.9 * hash(i * 5 + 1), th = 2.2 + r * 0.55, p = W(x, th + r * 0.8, y);
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hash(i * 9) * 6.28);
+    crowns.setMatrixAt(i, M.compose(p, q, new THREE.Vector3(r, r * 1.12, r)));
+    crowns.setColorAt(i, tc.set(GREENS[Math.floor(hash(i * 3 + 2) * GREENS.length)]));
+    trunks.setMatrixAt(i, M.compose(W(x, 0, y), q, new THREE.Vector3(1, th + r * 0.4, 1)));
+  });
+  for (const m of [crowns, trunks]) { m.castShadow = m.receiveShadow = true; scene.add(m); }
+}
+
+// trams on the real lines (one OSM route per direction): orange ATM livery, cream belt, windows that light up at night
+const tramList = [];
+TRAMS.forEach((r, k) => { const n = Math.max(1, Math.round(r.L / 560)); for (let i = 0; i < n; i++) tramList.push({ r, s0: (i + 0.6 * hash(k * 31 + i)) * r.L / n }); });
+function tramGeo(parts) { return mergeGeometries(parts.map(([lx, ly, lz, y, col]) => { const g = new THREE.BoxGeometry(lx, ly, lz).translate(0, y, 0);
+  g.setAttribute('color', new THREE.Float32BufferAttribute(new Array(g.attributes.position.count).fill(0).flatMap(() => tc.set(col).toArray()), 3)); return g; })); }
+const tramBody = new THREE.InstancedMesh(tramGeo([[13.6, 2.25, 2.36, 1.55, 0xe8832c], [13.7, 0.42, 2.4, 0.62, 0xf0e2c2], [13.2, 0.3, 2.1, 2.82, 0x7c7975]]),
+  new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }), tramList.length);
+const tramWin = new THREE.InstancedMesh(new THREE.BoxGeometry(12.9, 0.9, 2.42).translate(0, 1.95, 0),
+  new THREE.MeshStandardMaterial({ color: 0x262a31, roughness: 0.25, emissive: 0xffd7a0, emissiveIntensity: 0 }), tramList.length);
+for (const m of [tramBody, tramWin]) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; scene.add(m); }
+const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), UPV = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1), ZERO = new THREE.Vector3();
+function placeTrams(sec) {
+  tramList.forEach((t, i) => {
+    const { p, cum, L } = t.r, s = (t.s0 + 8.5 * sec) % L; // ~30 km/h
+    let k = 1; while (k < cum.length - 1 && cum[k] < s) k++;
+    const a = p[k - 1], b = p[k], f = (s - cum[k - 1]) / (cum[k] - cum[k - 1] || 1);
+    const edge = Math.min(s, L - s) < 9; // hide while entering / leaving the disc
+    tmpQ.setFromAxisAngle(UPV, Math.atan2(b.y - a.y, b.x - a.x));
+    tmpM.compose(W(a.x + (b.x - a.x) * f, 0.36, a.y + (b.y - a.y) * f), tmpQ, edge ? ZERO : ONE);
+    tramBody.setMatrixAt(i, tmpM); tramWin.setMatrixAt(i, tmpM);
+  });
+  tramBody.instanceMatrix.needsUpdate = tramWin.instanceMatrix.needsUpdate = true;
+}
+
+// people walking in the piazzas and pedestrian streets (deterministic random walk)
+const AREAS = data.areas.map(ring), people = [];
+let piazza = -1;
+const DUOMO = (() => { const ids = info.map((b, i) => [b, i]).filter(([b]) => b.ni >= 0 && data.names[b.ni] === 'Duomo di Milano');
+  const c = ids.reduce((s, [b]) => s.add(b.c), new THREE.Vector2()).divideScalar(ids.length || 1);
+  const west = Math.min(...ids.map(([, i]) => Math.min(...data.b[i][4].filter((_, k) => k % 2 === 0)))) / 10; // facade line
+  return { x: c.x, y: c.y, west, id: ids[0]?.[1] ?? -1 }; })();
+AREAS.forEach((a, k) => { if (inPoly(DUOMO.west - 40, DUOMO.y, a)) piazza = k; });
+AREAS.forEach((a, k) => {
+  const A = Math.abs(THREE.ShapeUtils.area(a)), n = Math.min(700, Math.round(A * (k === piazza ? 0.03 : 0.006)));
+  const bx = a.map((p) => p.x), by = a.map((p) => p.y), [x0, x1, y0, y1] = [Math.min(...bx), Math.max(...bx), Math.min(...by), Math.max(...by)];
+  for (let i = 0, tries = 0; i < n && tries < n * 40; tries++) {
+    const x = x0 + (x1 - x0) * hash(k * 7919 + tries * 2), y = y0 + (y1 - y0) * hash(k * 7919 + tries * 2 + 1);
+    if (inPoly(x, y, a)) { people.push({ x, y, h: hash(tries * 3 + k) * 6.283, sp: 1.0 + 0.6 * hash(tries + k * 17), a, id: people.length }); i++; }
+  }
+});
+const crowd = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.24, 1.2, 2, 6).translate(0, 0.84, 0), new THREE.MeshStandardMaterial({ roughness: 0.9 }), Math.max(1, people.length));
+{ const CL = [0x2d3442, 0xe9e4da, 0x8a3b32, 0x3e5a7a, 0x1f1f22, 0xc9a26b, 0x6d7c5a, 0xb85c3e]; people.forEach((p, i) => crowd.setColorAt(i, tc.set(CL[Math.floor(hash(i * 11) * CL.length)]))); }
+crowd.castShadow = true; crowd.frustumCulled = false; scene.add(crowd);
+let simT = 0;
+function walk(sec) { // advance the crowd to time sec in fixed 1/30 s steps
+  for (; simT < sec; simT += 1 / 30) for (const p of people) {
+    const st = Math.floor(simT * 30);
+    p.h += (hash(p.id * 131 + st) - 0.5) * 0.12;
+    const nx = p.x + Math.cos(p.h) * p.sp / 30, ny = p.y + Math.sin(p.h) * p.sp / 30;
+    if (inPoly(nx, ny, p.a)) { p.x = nx; p.y = ny; } else p.h += Math.PI * (0.6 + 0.8 * hash(p.id + st));
+  }
+  people.forEach((p, i) => crowd.setMatrixAt(i, tmpM.makeTranslation(p.x, 0.32, -p.y)));
+  crowd.instanceMatrix.needsUpdate = true;
+}
+
+// street lights: Milan hangs its lamps on wires over the middle of the street, every ~30 m; at night each one makes a pool of light
+const LAMPS = [];
+for (const [, p] of roadLines) { let acc = 15; for (let i = 0; i < p.length - 1; i++) { const L = p[i].distanceTo(p[i + 1]);
+  while (acc < L) { const f = acc / L; LAMPS.push([p[i].x + (p[i + 1].x - p[i].x) * f, p[i].y + (p[i + 1].y - p[i].y) * f]); acc += 30; } acc -= L; } }
+const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,255,255,.45)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+const lampBulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.45, 8, 6), new THREE.MeshBasicMaterial({ color: 0x000000, fog: false }), LAMPS.length);
+const lampPools = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowTex, color: 0xffd9a8, transparent: true,
+  opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -12 }), LAMPS.length);
+LAMPS.forEach(([x, y], i) => { lampBulbs.setMatrixAt(i, tmpM.makeTranslation(x, 8.5, -y)); lampPools.setMatrixAt(i, tmpM.compose(W(x, 0.45, y), tmpQ.identity(), new THREE.Vector3(28, 1, 28))); });
+lampPools.renderOrder = 2; scene.add(lampBulbs, lampPools);
+
+// sky dome: gradient that follows the sun, continuing below the horizon as haze
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { uSun: { value: new THREE.Vector3(0, 1, 0) }, uZen: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uGlow: { value: new THREE.Color() }, uH: { value: 1 } },
+  vertexShader: 'varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }',
+  fragmentShader: `uniform vec3 uSun, uZen, uHor, uGlow; uniform float uH; varying vec3 vD;
+    void main(){ vec3 d = normalize(vD); float h = d.y;
+      vec3 col = mix(uHor, uZen, smoothstep(0.38, 1.0, gl_FragCoord.y / uH)); // studio backdrop: screen-space gradient
+      float s = max(dot(d, uSun), 0.0);
+      col += uGlow * (pow(s, 4.0) * 0.32 + pow(s, 60.0) * 0.8) * smoothstep(-0.25, 0.05, h);
+      gl_FragColor = vec4(col, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(9000, 48, 24), skyMat);
+sky.renderOrder = -1; scene.add(sky);
+scene.fog = new THREE.Fog(0xffffff, 1500, 5600);
+
+const sun = new THREE.DirectionalLight(0xffffff, 3);
+sun.castShadow = true;
+const SM = Math.min(renderer.capabilities.maxTextureSize, CLEAN ? 8192 : COARSE ? 2048 : 4096);
+sun.shadow.mapSize.set(SM, SM);
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.35;
+Object.assign(sun.shadow.camera, { left: -R * 1.02, right: R * 1.02, near: 100, far: 4600 });
+scene.add(sun, sun.target);
+const hemi = new THREE.HemisphereLight(0xb9cbe6, 0xe6dccb, 1);
+scene.add(hemi);
+
+// palette keyed by sun altitude (degrees): night, blue hour, twilight glow, golden hour, day
+const KEYS = [
+  { a: -14, zen: 0x0a1124, hor: 0x1b2440, glow: 0x0c0a14, sun: 0x000000, si: 0.0, sky: 0x41558c, hi: 0.07 },
+  { a: -7, zen: 0x15214a, hor: 0x3c4774, glow: 0x5c3f63, sun: 0x000000, si: 0.0, sky: 0x5770b0, hi: 0.18 },
+  { a: -3, zen: 0x2e4380, hor: 0xd4917a, glow: 0xff8a5a, sun: 0x000000, si: 0.0, sky: 0x8f8fc6, hi: 0.45 },
+  { a: -0.6, zen: 0x6f78a8, hor: 0xf4a074, glow: 0xff8448, sun: 0xff6a2c, si: 0.0, sky: 0xc2a6c6, hi: 0.72 },
+  { a: 2, zen: 0x9d9cc0, hor: 0xf7b383, glow: 0xff9b54, sun: 0xff9448, si: 6.6, sky: 0xaaaed6, hi: 0.62 },
+  { a: 7, zen: 0xa9b7d8, hor: 0xf6cda4, glow: 0xffbc7e, sun: 0xffb272, si: 6.2, sky: 0xb6c1e0, hi: 0.72 },
+  { a: 15, zen: 0x93b9e4, hor: 0xe8e1d4, glow: 0xffdcb4, sun: 0xffdfba, si: 4.6, sky: 0xbdcfea, hi: 0.6 },
+  { a: 30, zen: 0x7caee6, hor: 0xdfe8f0, glow: 0xfff2e0, sun: 0xfff2e2, si: 3.7, sky: 0xc2d4ec, hi: 0.5 },
+  { a: 65, zen: 0x70a6e4, hor: 0xdbe7f2, glow: 0xffffff, sun: 0xfff8f0, si: 3.3, sky: 0xc6d7ef, hi: 0.46 },
+];
+const tmpA = new THREE.Color(), tmpB = new THREE.Color();
+function pal(alt, k) {
+  let i = 0; while (i < KEYS.length - 2 && alt > KEYS[i + 1].a) i++;
+  const A = KEYS[i], B = KEYS[i + 1], t = THREE.MathUtils.clamp((alt - A.a) / (B.a - A.a), 0, 1);
+  return k === 'si' || k === 'hi' ? A[k] + (B[k] - A[k]) * t : tmpA.set(A[k]).lerp(tmpB.set(B[k]), t).clone();
+}
+
+// post: scene -> ambient occlusion (contact shadows in courtyards and at building feet) -> bloom (lamps, windows) -> tone map
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
+composer.addPass(new RenderPass(scene, camera));
+const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+gtao.updateGtaoMaterial({ radius: 7, distanceExponent: 1.5, thickness: 6, scale: 1.15, samples: 16, distanceFallOff: 1 });
+gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+gtao.blendIntensity = 0.85; gtao.enabled = !COARSE;
+composer.addPass(gtao);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.8, 0.55, 1.05);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+const state = { date: '', rise: 0, set: 1440, min: 720, sun: null };
+function setSun(min) {
+  state.min = min;
+  const ms = romeToUTC(state.date, min), p = sunPosition(ms, LAT, LON); state.sun = p;
+  const alt = Math.max(p.alt, -1), ca = Math.cos(alt * RAD);
+  const dir = new THREE.Vector3(Math.sin(p.az * RAD) * ca, Math.sin(alt * RAD), -Math.cos(p.az * RAD) * ca).normalize();
+  sun.position.copy(dir).multiplyScalar(2300); sun.target.position.set(0, 0, 0);
+  const sa = Math.max(Math.sin(Math.max(alt, 0.5) * RAD), 0.01);
+  Object.assign(sun.shadow.camera, { top: R * sa + 120 * ca + 10, bottom: -R * sa - 10 }); // tight light-space box: crisp low-sun shadows
+  sun.shadow.camera.updateProjectionMatrix();
+  sun.color.copy(pal(p.alt, 'sun')); sun.intensity = pal(p.alt, 'si') * THREE.MathUtils.smoothstep(p.alt, -0.5, 1.5);
+  hemi.color.copy(pal(p.alt, 'sky')); hemi.intensity = pal(p.alt, 'hi');
+  hemi.groundColor.set(0xe6dccb).lerp(tmpB.set(0x2a2f44), THREE.MathUtils.smoothstep(-p.alt, 1, 9));
+  skyMat.uniforms.uSun.value.copy(dir); skyMat.uniforms.uZen.value.copy(pal(p.alt, 'zen'));
+  skyMat.uniforms.uHor.value.copy(pal(p.alt, 'hor')); skyMat.uniforms.uGlow.value.copy(pal(p.alt, 'glow'));
+  scene.fog.color.copy(pal(p.alt, 'hor')).multiplyScalar(0.93);
+  U.uSkyTint.value.copy(pal(p.alt, 'zen'));
+  // night: street lights switch on as the sun drops below ~1 deg (and off at dawn), windows light up
+  const night = THREE.MathUtils.smoothstep(-p.alt, -1, 6);
+  U.uNight.value = night; U.uLit.value = 0.4 * night;
+  lampBulbs.visible = night > 0.01; lampPools.visible = night > 0.01 && !heatPlane.visible;
+  lampBulbs.material.color.setRGB(4, 3.4, 2.6).multiplyScalar(night); lampPools.material.opacity = 0.24 * night;
+  tramWin.material.emissiveIntensity = 1.6 * night;
+  for (const m of NIGHTLIT) { m.material.emissive.setRGB(1, 0.78, 0.52); m.material.emissiveIntensity = 0.14 * night; }
+  bloom.strength = 0.1 + 0.45 * night; bloom.threshold = 1.2 + 1.5 * (1 - night);
+  renderer.toneMappingExposure = 1 + 0.35 * night;
+  document.body.classList.toggle('dark', night > 0.55);
+  const hx = '#' + scene.fog.color.getHexString(); document.body.style.background = hx;
+  const zx = '#' + skyMat.uniforms.uZen.value.getHexString(); $('scrim').style.background = `linear-gradient(${zx}e0 0%, ${zx}a0 50%, ${zx}00 100%)`;
+  $('clock').textContent = hhmm(min);
+  const sl = p.alt > 0.3 ? 1 / Math.tan(p.alt * RAD) : Infinity;
+  $('sun').textContent = p.alt > 0.3 ? `sun ${p.alt.toFixed(0)}° up · a 20 m palazzo casts a ${Math.round(20 * sl)} m shadow`
+    : p.alt > -0.833 ? 'sun on the horizon' : `sun ${(-p.alt).toFixed(0)}° below the horizon${night > 0.5 ? ' · street lights on' : ''}`;
+  if (!PLAY) $('time').value = min;
+}
+function setDate(date, keepFrac = true) {
+  const f = keepFrac && state.set > state.rise ? (state.min - state.rise) / (state.set - state.rise) : null;
+  state.date = date; Object.assign(state, dayLimits(date));
+  const d = new Date(date + 'T12:00:00Z');
+  $('date').textContent = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' }) + ` · sunrise ${hhmm(state.rise)} · sunset ${hhmm(state.set)}`;
+  $('day').value = date; $('time').min = Math.ceil(state.rise - 45); $('time').max = Math.floor(state.set + 75);
+  setSun(f === null ? state.min : state.rise + f * (state.set - state.rise));
+  if (heatOn) showHeat(true);
+}
+
+// ---------- hover / tap: highlight the building (all parts sharing its name) and show its name ----------
+const byName = new Map(); info.forEach((b, i) => { if (b.ni >= 0) byName.set(b.ni, [...(byName.get(b.ni) || []), i]); });
+const ACC = 0x4f7cff;
+let lit = [];
+function highlight(i) {
+  const ids = i < 0 ? [] : info[i].ni >= 0 ? byName.get(info[i].ni) : [i];
+  if (ids.length === lit.length && ids[0] === lit[0]) return;
+  for (const k of lit) paintOne(k, info[k].look[1], info[k].look[2]);
+  for (const k of ids) paintOne(k, ACC, ACC);
+  lit = ids; cityGeo.attributes.color.needsUpdate = cityGeo.attributes.aRoof.needsUpdate = true;
+}
+function describe(i) {
+  const b = info[i], name = b.ni >= 0 ? data.names[b.ni] : 'Unnamed building';
+  const tall = b.ni >= 0 ? Math.max(...byName.get(b.ni).map((k) => info[k].h)) : b.h, hs = Number.isInteger(tall) || tall > 150 ? tall.toFixed(0) : tall.toFixed(1);
+  const how = b.src === 3 ? 'surveyed by the Comune' : b.src === 0 ? 'mapped height' : b.src === 1 ? `${Math.round(b.h / 3.2)} floors` : 'height estimated';
+  return `<b>${name.replace(/</g, '&lt;')}</b> <span>· ${hs} m · ${how}</span>`;
+}
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let hoverAt = null, downAt = null;
+function pick(x, y) {
+  ndc.set(x / innerWidth * 2 - 1, -y / innerHeight * 2 + 1); ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(city, false)[0];
+  if (!hit) return -1;
+  const v = hit.face.a; let lo = 0, hi = starts.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (starts[m] <= v) lo = m; else hi = m - 1; }
+  return lo;
+}
+function showTip(i, x, y) {
+  const tip = $('tip'); highlight(i);
+  if (i < 0) { tip.style.display = 'none'; return; }
+  tip.innerHTML = describe(i); tip.style.display = 'block';
+  tip.style.left = Math.min(innerWidth - tip.offsetWidth / 2 - 8, Math.max(tip.offsetWidth / 2 + 8, x)) + 'px'; tip.style.top = Math.max(tip.offsetHeight + 22, y) + 'px';
+}
+canvas.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' && !e.buttons) hoverAt = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerleave', () => { hoverAt = null; showTip(-1); });
+canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; if (e.pointerType === 'mouse') showTip(-1); });
+canvas.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse' && downAt && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) < 8) inspect(e.clientX, e.clientY); });
+
+// ---------- sun hours: minutes of direct sun at street level, precomputed from the building heights (data/sun_hours.py) ----------
+const HEATMAPS = [['2026-06-21', '21 June', 172], ['2026-12-21', '21 December', 355], ['2026-03-20', '20 March', 79]]; // [file date, label, day of year]
+const decl = (doy) => 23.44 * Math.sin(2 * Math.PI * (284 + doy) / 365);
+const heatFor = (date) => { const doy = (Date.parse(date) - Date.parse(date.slice(0, 4) + '-01-01')) / 864e5 + 1;
+  return HEATMAPS.reduce((b, o) => Math.abs(decl(o[2]) - decl(doy)) < Math.abs(decl(b[2]) - decl(doy)) ? o : b); }; // the map whose sun path is closest
+const heatMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -16,
+  uniforms: { tex: { value: null }, uR: { value: R }, uLo: { value: new THREE.Color(0x3a2618) }, uMid: { value: new THREE.Color(0x9c6a3a) }, uHi: { value: new THREE.Color(0xffd98a) } },
+  vertexShader: 'varying vec2 vUv; varying vec2 vP; void main(){ vUv = uv; vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tex; uniform float uR; uniform vec3 uLo, uMid, uHi; varying vec2 vUv; varying vec2 vP;
+    void main(){ vec4 s = texture2D(tex, vUv); float t = clamp(s.r * 255.0 * 5.0 / 60.0 / 15.0, 0.0, 1.0); // 0..15 h
+      vec3 c = t < 0.5 ? mix(uLo, uMid, t * 2.0) : mix(uMid, uHi, t * 2.0 - 1.0);
+      gl_FragColor = vec4(c, s.a * 0.95 * (1.0 - smoothstep(uR - 140.0, uR - 30.0, length(vP)))); }`, // fade the edge: buildings beyond the disc are missing
+});
+const heatPlane = new THREE.Mesh(new THREE.CircleGeometry(R, 192).rotateX(-Math.PI / 2).translate(0, 0.5, 0), heatMat);
+heatPlane.visible = false; heatPlane.renderOrder = 3; scene.add(heatPlane);
+const heatCache = {};
+async function heatData(file) {
+  if (heatCache[file]) return heatCache[file];
+  const img = new Image(); img.src = `data/sun-${file}.png`; await img.decode();
+  const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0);
+  const px = x.getImageData(0, 0, c.width, c.height).data, vals = [];
+  for (let i = 0; i < c.width * c.height; i++) { const cx = (i % c.width + 0.5) / c.width * 2 - 1, cy = (Math.floor(i / c.width) + 0.5) / c.height * 2 - 1;
+    if (px[i * 4 + 3] && Math.hypot(cx, cy) * R < R - 140) vals.push(px[i * 4] * 5 / 60); }
+  vals.sort((a, b) => a - b);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.NoColorSpace;
+  return heatCache[file] = { w: c.width, h: c.height, px, tex, median: vals[vals.length >> 1], none: vals.filter((v) => v === 0).length / vals.length };
+}
+const fmtH = (h) => h < 1 ? `${Math.round(h * 60)} min` : `${Math.floor(h)} h${Math.round(h % 1 * 60) ? ` ${Math.round(h % 1 * 60)} min` : ''}`;
+let heatOn = false, heat = null, heatLabel = '';
+async function showHeat(on) {
+  heatOn = on; $('heat').classList.toggle('on', on); document.body.classList.toggle('heat', on); $('heat').setAttribute('aria-pressed', on);
+  heatPlane.visible = on; $('legend').hidden = !on;
+  if (!on) return;
+  const [file, label] = heatFor(state.date); heat = await heatData(file); heatLabel = label;
+  heatMat.uniforms.tex.value = heat.tex;
+  $('lgTitle').textContent = `Hours of direct sun on ${label}`;
+  $('lgNote').textContent = (heat.median > 0 ? `Half of the open ground (streets, piazzas, courtyards) gets less than ${fmtH(heat.median)}.`
+    : `${Math.round(heat.none * 100)}% of the open ground (streets, piazzas, courtyards) gets no direct sun at all.`) + ' Building shadows only; trees not counted.';
+}
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.5), hitP = new THREE.Vector3();
+function sunAt(x, y) { // street cell under the pointer -> hours, or null
+  ndc.set(x / innerWidth * 2 - 1, -y / innerHeight * 2 + 1); ray.setFromCamera(ndc, camera);
+  if (!heat || !ray.ray.intersectPlane(groundPlane, hitP) || Math.hypot(hitP.x, hitP.z) > R - 30) return null;
+  const px = Math.floor((hitP.x + R) / (2 * R) * heat.w), py = Math.floor((hitP.z + R) / (2 * R) * heat.h), i = (py * heat.w + px) * 4; // row 0 = north = -z
+  return heat.px[i + 3] ? heat.px[i] * 5 / 60 : null;
+}
+function showSun(x, y) {
+  const h = sunAt(x, y), tip = $('tip');
+  if (h === null) { tip.style.display = 'none'; return; }
+  tip.innerHTML = `<b>☀ ${fmtH(h)}</b> <span>of direct sun on ${heatLabel}</span>`; tip.style.display = 'block';
+  tip.style.left = Math.min(innerWidth - tip.offsetWidth / 2 - 8, Math.max(tip.offsetWidth / 2 + 8, x)) + 'px'; tip.style.top = Math.max(tip.offsetHeight + 22, y) + 'px';
+}
+function inspect(x, y) { const i = pick(x, y); if (i < 0 && heatOn) { highlight(-1); showSun(x, y); } else showTip(i, x, y); }
+$('heat').addEventListener('click', () => showHeat(!heatOn));
+
+// ---------- UI ----------
+const romeToday = () => { const p = romeParts(Date.now()); return `${p.year}-${p.month}-${p.day}`; };
+let playing = false, lastT = null;
+$('time').addEventListener('input', (e) => { playing = false; $('play').textContent = '▶'; setSun(+e.target.value); });
+$('day').addEventListener('change', (e) => e.target.value && setDate(e.target.value));
+document.querySelectorAll('[data-d]').forEach((b) => b.addEventListener('click', () => {
+  const y = romeToday().slice(0, 4); setDate(b.dataset.d === 'today' ? romeToday() : `${y}-${b.dataset.d}`);
+}));
+$('play').addEventListener('click', () => { playing = !playing; lastT = null; $('play').textContent = playing ? '❚❚' : '▶'; if (playing && state.min >= state.set + 70) setSun(state.rise - 40); });
+
+// ---------- camera: orbit params around a target, in data metres (x east, y north) ----------
+function place(o) { // o: {tx, ty, th, az (bearing camera from target), el (deg above horizon), d}
+  const t = W(o.tx, o.th, o.ty), ce = Math.cos(o.el * RAD);
+  camera.position.set(t.x + Math.sin(o.az * RAD) * ce * o.d, t.y + Math.sin(o.el * RAD) * o.d, t.z - Math.cos(o.az * RAD) * ce * o.d);
+  controls.target.copy(t); camera.lookAt(t);
+}
+// play mode: one key every 2 s of video. m = wall-clock minutes (from sunrise r / sunset s); the rest is the camera
+const PLAY_S = 24, PLAY_DATE = Q.get('date') || '2026-06-21';
+const SHOTS = (r, s, n) => [
+  { m: r - 32, tx: DUOMO.x, ty: DUOMO.y, th: 45, az: 38, el: 20, d: 300 },   // blue hour, lamps still on, the Duomo floodlit
+  { m: r - 10, tx: DUOMO.x, ty: DUOMO.y, th: 40, az: 48, el: 24, d: 340 },
+  { m: r + 14, tx: DUOMO.x - 20, ty: DUOMO.y + 20, th: 30, az: 66, el: 29, d: 470 }, // first sun on the spires
+  { m: r + 75, tx: 220, ty: -60, th: 10, az: 96, el: 38, d: 760 },
+  { m: r + 200, tx: 90, ty: 20, th: 0, az: 140, el: 52, d: 980 },
+  { m: n, tx: 0, ty: 40, th: 0, az: 195, el: 60, d: 1120 },                   // noon passes quickly
+  { m: s - 210, tx: -140, ty: 120, th: 0, az: 245, el: 47, d: 940 },
+  { m: s - 100, tx: -330, ty: 240, th: 12, az: 283, el: 30, d: 660 },         // golden hour towards the Castello
+  { m: s - 38, tx: -40, ty: 40, th: 0, az: 292, el: 25, d: 760 },
+  { m: s + 2, tx: 290, ty: DUOMO.y, th: 30, az: 278, el: 20, d: 540 },        // sunset lights up the Duomo's west front
+  { m: s + 26, tx: DUOMO.x - 30, ty: DUOMO.y, th: 30, az: 266, el: 18, d: 430 },
+  { m: s + 50, tx: DUOMO.x - 30, ty: DUOMO.y, th: 32, az: 259, el: 17, d: 395 }, // night: lights on
+  { m: s + 62, tx: DUOMO.x - 30, ty: DUOMO.y, th: 32, az: 255, el: 16, d: 380 },
+];
+const cr = (p0, p1, p2, p3, t) => 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t);
+function shotAt(keys, u) { // Catmull-Rom through keys, u in 0..1
+  const n = keys.length - 1, x = Math.min(u, 0.99999) * n, i = Math.floor(x), t = x - i, o = {};
+  for (const k of Object.keys(keys[0])) o[k] = cr(keys[Math.max(i - 1, 0)][k], keys[i][k], keys[i + 1][k], keys[Math.min(i + 2, n)][k], t);
+  return o;
+}
+
+function resize() {
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); composer.setSize(w, h);
+  camera.aspect = w / h; camera.fov = w / h < 0.9 ? 46 : 35; camera.updateProjectionMatrix();
+  skyMat.uniforms.uH.value = renderer.getDrawingBufferSize(new THREE.Vector2()).y;
+}
+addEventListener('resize', resize); resize();
+
+let keys = null;
+if (PLAY) { setDate(PLAY_DATE, false); controls.enabled = false; keys = SHOTS(state.rise, state.set, (state.rise + state.set) / 2); }
+else {
+  const today = romeToday(); setDate(Q.get('date') || today, false);
+  const p = romeParts(Date.now()), now = +p.hour * 60 + +p.minute;
+  setSun(now > state.rise - 40 && now < state.set + 70 ? now : state.set - 55);
+  const s0 = SHOTS(state.rise, state.set, 720)[5]; place({ ...s0, ...(innerWidth / innerHeight < 0.9 ? { d: 1400, el: 50 } : {}) });
+  if (Q.has('cam')) { const [tx, ty, th, az, el, d] = Q.get('cam').split(',').map(Number); place({ tx, ty, th, az, el, d }); }
+  if (Q.has('m')) setSun(+Q.get('m'));
+  if (Q.has('heat')) await showHeat(true);
+}
+$('loading').remove();
+
+// ---------- frame loop (rAF timestamps only) ----------
+let t0 = null, frames = 0;
+const v3 = new THREE.Vector3();
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (t0 === null) t0 = now;
+  const sec = FREEZE ?? (now - t0) / 1000;
+  if (PLAY) {
+    const x = Math.min(sec / PLAY_S, 1), o = shotAt(keys, x);
+    setSun(o.m); place(o);
+    if (x > 0.86 && DUOMO.id >= 0) { // pin the Duomo's name for the final beat
+      v3.copy(W(DUOMO.west - 6, 0, DUOMO.y)).project(camera); // label sits on the piazza, under the facade
+      const tip = $('tip'); tip.innerHTML = describe(DUOMO.id); tip.style.display = 'block';
+      tip.style.fontSize = CLEAN ? '2.8vmin' : '14px'; tip.style.transform = 'translate(-50%, 18px)';
+      tip.style.left = (v3.x + 1) / 2 * innerWidth + 'px'; tip.style.top = (1 - v3.y) / 2 * innerHeight + 'px';
+      tip.style.opacity = Math.min(1, (x - 0.86) / 0.05);
+    }
+  } else {
+    if (playing) {
+      if (lastT !== null) { let m = state.min + (now - lastT) / 1000 * (state.set - state.rise + 115) / 26; if (m > state.set + 75) m = state.rise - 40; setSun(m); }
+      lastT = now;
+    }
+    controls.update();
+    if (hoverAt) { const [x, y] = hoverAt; hoverAt = null; inspect(x, y); }
+  }
+  placeTrams(sec); walk(sec);
+  sky.position.copy(camera.position);
+  composer.render();
+  if (++frames === 3) window.__ready = true;
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
